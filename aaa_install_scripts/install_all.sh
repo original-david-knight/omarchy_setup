@@ -8,4 +8,6 @@
 . ./setup_ssh.sh
 . ./install_claude_code.sh
 . ./install_vscode.sh
-
+. ./install_cursor.sh
+. ./install_npm.sh
+. ./install_codex.sh
