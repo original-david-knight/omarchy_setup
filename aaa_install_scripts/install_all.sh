@@ -12,3 +12,5 @@
 . ./install_npm.sh
 . ./install_codex.sh
 . ./install_dotnet.sh
+. ./setup_bloothtooth.sh
+

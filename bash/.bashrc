@@ -79,7 +79,7 @@ fi
 # Add a new alias to your saved environment on the fly.
 aa() {
   echo "alias $1='$2'" >>/root/.aliases-personal
-  source ~/.aliases-personal
+  source ~/.aliases.sh
   echo "'$1' is now aliased to '$2'"
 }
 
@@ -94,6 +94,8 @@ fi
 if [ -d "$HOME/.local/bin" ]; then
   PATH="$HOME/.local/bin:$PATH"
 fi
+
+PATH="$PATH:/home/david/.dotnet"
 PATH=$PATH:$HOME/bin
 PATH=$PATH:$HOME/.emacs.d/bin
 PATH=$PATH:$HOME/Android/Sdk/tools/bin
@@ -148,11 +150,12 @@ export CM_OUTPUT_CLIP=1
 export CHROME_EXECUTABLE=/usr/bin/google-chrome-stable
 
 export PATH="$PATH:/home/david/.dotnet/tools"
+
 export PATH="$PATH:/home/david/workspace/Rekordo/src/backend/cli/bin/Debug/net8.0"
 
 export DOTNET_CLI_TELEMETRY_OPTOUT=true
 
-export DOTNET_ROOT=/usr/share/dotnet
+export DOTNET_ROOT=/home/$USER/.dotnet
 export PATH="$PATH:$DOTNET_ROOT:$DOTNET_ROOT/tools"
 if [ -f ~/bin/git-completion.bash ]; then
   . ~/bin/git-completion.bash
