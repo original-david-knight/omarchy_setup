@@ -5,3 +5,6 @@
 . ./install_stow.sh
 . ./install_tmux.sh
 . ./install_obsidian.sh
+. ./setup_ssh.sh
+. ./install_claude_code.sh
+

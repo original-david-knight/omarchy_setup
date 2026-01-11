@@ -5,8 +5,10 @@ get_monitor_count() {
     echo "$count"
 }
 
+rm ~/.bashrc
 stow --target=../  bash
 
+rm -rf ../.config/ghostty
 monitor_count=$(get_monitor_count)
 if [ "$monitor_count" -gt 1 ]; then
     stow --target=../  ghostty_big_screen
@@ -17,6 +19,7 @@ fi
 stow --target=../  tmux
 rm -rf ../.config/hypr
 stow --target=../ hypr
+rm -rf ../.config/starship*
 stow --target=../ starship
 stow --target=../ ssh
 stow --target=../ bin

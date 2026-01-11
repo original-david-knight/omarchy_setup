@@ -162,3 +162,4 @@ if [ -f ~/.bashrc_private ]; then
   . ~/.bashrc_private
 fi
 
+export PATH="$HOME/.local/bin:$PATH"
