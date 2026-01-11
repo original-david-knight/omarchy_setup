@@ -25,6 +25,6 @@ stow --target=../ ssh
 stow --target=../ bin
 rm -rf ../.config/waybar
 stow --target=../ waybar
-
+stow --target=../ vscode
 
 

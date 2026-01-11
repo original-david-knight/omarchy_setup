@@ -7,4 +7,5 @@
 . ./install_obsidian.sh
 . ./setup_ssh.sh
 . ./install_claude_code.sh
+. ./install_vscode.sh
 
