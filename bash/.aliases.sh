@@ -37,3 +37,14 @@ alias startvpn_kr="sudo openvpn /etc/openvpn/client/se-kr-01.protonvpn.com.udp.o
 alias startvpn_usa="sudo openvpn /etc/openvpn/client/USA_no_core.ovpn"
 
 
+#modern unix
+# Changing "ls" to "exa"  install exa to make this work
+alias ls='exa -al --color=always --group-directories-first' # my preferred listing
+alias la='exa -a --color=always --group-directories-first'  # all files and dirs
+alias ll='exa -l --color=always --group-directories-first'  # long format
+alias lt='exa -aT --color=always --group-directories-first' # tree listing
+alias l.='exa -a | egrep "^\."'
+alias cat=bat # install bat
+alias df=duf  # install duf
+alias top=btm
+alias rgrep=rg
