@@ -10,6 +10,7 @@ stow --target=../  bash
 
 rm -rf ../.config/ghostty
 monitor_count=$(get_monitor_count)
+echo $monitor_count
 if [ "$monitor_count" -gt 1 ]; then
     stow --target=../  ghostty_big_screen
 else
@@ -24,8 +25,13 @@ stow --target=../ starship
 stow --target=../ ssh
 stow --target=../ bin
 rm -rf ../.config/waybar
-stow --target=../ waybar
-# rm ../.config/Code
+
+if [ "$monitor_count" -gt 1 ]; then
+  stow --target=../ waybar
+else
+  stow --target=../ waybar_laptop
+fi
+mkdir -p ../.config/Code/User
 stow --target=../ vscode
 
 
