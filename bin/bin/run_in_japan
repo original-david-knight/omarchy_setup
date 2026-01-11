@@ -1,0 +1,2 @@
+#!/bin/bash 
+vopono exec --provider protonvpn --server japan --protocol openvpn "$(echo "$@")" 

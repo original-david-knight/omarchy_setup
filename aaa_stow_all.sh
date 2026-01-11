@@ -15,8 +15,13 @@ else
 fi
 
 stow --target=../  tmux
+rm -rf ../.config/hypr
 stow --target=../ hypr
 stow --target=../ starship
 stow --target=../ ssh
+stow --target=../ bin
+rm -rf ../.config/waybar
+stow --target=../ waybar
+
 
 

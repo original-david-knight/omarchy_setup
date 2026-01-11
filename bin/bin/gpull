@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+# Usage: pushes current checkout branch to its remote counterpart.
+
+current_branch=$(git symbolic-ref HEAD 2>/dev/null) ||
+current_branch="(unnamed branch)"
+
+git pull origin ${current_branch}

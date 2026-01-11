@@ -1,0 +1,3 @@
+#!/bin/bash
+echo "$(echo "$@")"
+vopono exec --provider protonvpn --server sweden --protocol openvpn "$(echo "$@")" 
