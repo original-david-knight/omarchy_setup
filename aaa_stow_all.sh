@@ -17,6 +17,6 @@ fi
 stow --target=../  tmux
 stow --target=../ hypr
 stow --target=../ starship
-
+stow --target=../ ssh
 
 
