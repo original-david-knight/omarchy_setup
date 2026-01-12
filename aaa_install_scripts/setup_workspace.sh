@@ -11,3 +11,7 @@ fi
 if [ ! -d /home/$USER/workspace/wilder/main ]; then
   git -C /home/$USER/workspace/wilder worktree add main main
 fi
+
+if [ ! -d /home/$USER/workspace/omarchy-setup-private ]; then
+  git clone git@github.com:original-david-knight/omarchy-setup-private.git  /home/$USER/workspace/omarchy-setup-private 
+fi
