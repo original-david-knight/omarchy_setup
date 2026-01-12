@@ -14,4 +14,5 @@
 . ./install_dotnet.sh
 . ./setup_bloothtooth.sh
 . ./install_postresql.sh
+. ./install_slack.sh
 
