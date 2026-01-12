@@ -13,4 +13,5 @@
 . ./install_codex.sh
 . ./install_dotnet.sh
 . ./setup_bloothtooth.sh
+. ./install_postresql.sh
 
