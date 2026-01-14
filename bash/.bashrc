@@ -166,3 +166,5 @@ if [ -f ~/.bashrc_private ]; then
 fi
 
 export PATH="$HOME/.local/bin:$PATH"
+
+export PATH="$PATH:/home/david/.config/.foundry/bin"
