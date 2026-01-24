@@ -17,3 +17,4 @@
 . ./install_postresql.sh
 . ./install_slack.sh
 . ./install_discord.sh
+. ./install_hyprexpo.sh
