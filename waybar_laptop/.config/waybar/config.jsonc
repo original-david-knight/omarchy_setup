@@ -7,6 +7,7 @@
   "modules-left": ["custom/omarchy", "hyprland/workspaces"],
   "modules-center": [
     "clock",
+    "custom/calendar",
     "custom/update",
     "custom/screenrecording-indicator",
   ],
@@ -67,6 +68,12 @@
     "format": "{:%A     %Y-%m-%d                                                  %H:%M  }",
     "tooltip": false,
     "on-click-right": "omarchy-launch-floating-terminal-with-presentation omarchy-tz-select",
+  },
+  "custom/calendar": {
+    "exec": "~/.config/waybar/scripts/gcal.sh",
+    "return-type": "json",
+    "interval": 300,
+    "on-click": "xdg-open https://calendar.google.com",
   },
   "network": {
     "format-icons": ["󰤯", "󰤟", "󰤢", "󰤥", "󰤨"],
