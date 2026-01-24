@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# IDE selection menu using Walker dmenu (matches Omarchy style)
+
+choice=$(echo -e "󰨞  VS Code\n  Cursor" | omarchy-launch-walker --dmenu --width 200 --minheight 1 --maxheight 100 -p "IDE…" 2>/dev/null)
+
+case "$choice" in
+  *"VS Code"*) uwsm app -- code ;;
+  *"Cursor"*) uwsm app -- cursor ;;
+esac
