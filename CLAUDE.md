@@ -4,48 +4,63 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a dotfiles repository for an Arch Linux system running Omarchy (a Hyprland-based desktop environment). Configuration files are managed with GNU Stow, which creates symlinks from this repository to the home directory.
-
-## Repository Structure
-
-Each top-level directory is a "stow package" that mirrors the home directory structure:
-- `bash/` - Shell configuration (.bashrc, .aliases.sh)
-- `hypr/` - Hyprland window manager configs (.config/hypr/)
-- `ghostty/` - Ghostty terminal emulator config (.config/ghostty/)
-- `ghostty_big_screen/` - Alternative Ghostty config for larger displays
-- `tmux/` - Tmux configuration (.tmux.conf)
-- `starship/` - Starship prompt config (.config/starship/)
-- `aaa_install_scripts/` - Installation scripts (not stowed)
+Dotfiles repository for an Arch Linux system running Omarchy (a Hyprland-based desktop environment). Configuration files are managed with GNU Stow, which creates symlinks from this repository to the home directory.
 
 ## Commands
 
-### Deploy all configurations
 ```bash
-./aaa_stow_all.sh
-```
+# Deploy all configurations (auto-selects laptop vs multi-monitor variants)
+./stow_all.sh
 
-### Deploy a single package
-```bash
+# Deploy a single package
 stow --target=../ <package-name>
-# Example: stow --target=../ bash
-```
 
-### Remove a stowed package
-```bash
+# Remove a stowed package
 stow -D --target=../ <package-name>
+
+# Install all dependencies on fresh system
+./install_all.sh
+
+# Reload Hyprland config without restart
+hyprctl reload
 ```
 
-### Install dependencies (Arch Linux)
+## Architecture
+
+### Stow Packages
+
+Each top-level directory mirrors home directory structure. `stow_all.sh` automatically selects between variants based on monitor count:
+- Single monitor: `ghostty/`, `waybar_laptop/`
+- Multi-monitor: `ghostty_big_screen/`, `waybar/`
+
+### Hyprland Configuration Layering
+
+The Hyprland config (`hypr/.config/hypr/hyprland.conf`) uses a three-layer approach:
+
+1. **Omarchy defaults** - Sourced from `~/.local/share/omarchy/default/hypr/` (don't edit)
+2. **Theme settings** - Sourced from `~/.config/omarchy/current/theme/`
+3. **Local overrides** - Files in this repo override defaults
+
+Hyprland-specific documentation is in `hypr/.config/hypr/CLAUDE.md`.
+
+### Key Hyprland Patterns
+
+**Keybinding syntax**: `bindd = MODIFIERS, KEY, Description, exec, command`
+- Use `uwsm app --` prefix for GUI applications
+- Use `omarchy-launch-or-focus` to toggle existing windows
+- Use `omarchy-launch-webapp` for web apps in Chrome
+
+**Monitor configuration**: Uses EDID descriptors (`desc:Manufacturer Model Serial`) instead of port names (DP-1) for stability across restarts.
+
+**Omarchy utilities** (in `~/.local/share/omarchy/bin/`):
+- `omarchy-launch-or-focus` - Focus existing window or launch new
+- `omarchy-launch-webapp` - Open URL in dedicated Chrome window
+- `omarchy-cmd-screenshot` - Screenshot with region/window selection
+
+## Debugging
+
 ```bash
-cd aaa_install_scripts && ./install_all.sh
+hyprctl monitors        # Debug monitor setup
+hyprctl activewindow    # Get window class for window rules
+hyprctl dispatch exec <cmd>  # Test a command
 ```
-
-## Key Configuration Details
-
-**Hyprland**: The main config (`hypr/.config/hypr/hyprland.conf`) sources Omarchy defaults from `~/.local/share/omarchy/` and then applies local overrides. Custom keybindings are in `bindings.conf`, monitor setup in `monitors.conf`.
-
-**Bash**: Sources Omarchy defaults, then applies custom aliases and PATH modifications. Uses starship for the prompt.
-
-**Tmux**: Uses `C-j` as prefix (instead of default `C-b`), dracula theme, TPM for plugins.
-
-**Ghostty**: Tokyo Night color scheme, CaskaydiaMono Nerd Font at size 18.
