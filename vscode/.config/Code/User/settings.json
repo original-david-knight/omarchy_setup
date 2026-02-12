@@ -144,14 +144,6 @@
     "fontWeight": "bold",
     "type": "text-and-comment"
   },
-  "myvsext.btc_rpc_endpoints": [
-    {
-      "host": "localhost",
-      "port": 18332,
-      "username": "ivan",
-      "password": "REDACTED"
-    }
-  ],
   "ruff.lineLength": 120,
   "[xml]": {
     "editor.defaultFormatter": "redhat.vscode-xml"

@@ -169,3 +169,9 @@ export PATH="$HOME/.local/bin:$PATH"
 
 export PATH="$PATH:/home/david/.config/.foundry/bin"
 export PATH="$PATH:$HOME/go/bin"
+
+# Disable focus reporting after Claude Code exits to prevent Hyprland focus lock
+claude() {
+    command claude "$@"
+    printf '\e[?1004l'
+}
