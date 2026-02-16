@@ -55,6 +55,9 @@ apply_theme() {
   tmux set $flag status-right-style "bg=$bg,fg=$fg"
   tmux set $flag window-status-current-style "bg=$fg,fg=$bg,bold"
   tmux set $flag window-status-style "bg=$bg,fg=$fg"
+  tmux set $flag window-status-activity-style "bg=$bg,fg=$fg"
+  tmux set $flag window-status-bell-style "bg=$bg,fg=$fg"
+  tmux set $flag window-status-last-style "bg=$bg,fg=$fg"
   tmux set $flag message-style "bg=$fg,fg=$bg"
   tmux set $flag @current-theme "$name"
 }
