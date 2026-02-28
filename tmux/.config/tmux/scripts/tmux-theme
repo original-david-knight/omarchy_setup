@@ -7,17 +7,17 @@
 #   tmux-theme --cycle          - cycle to next theme (current session)
 
 declare -A THEMES=(
-  [green]="bg=#a6e3a1,fg=#1e1e2e"
-  [yellow]="bg=#f9e2af,fg=#1e1e2e"
-  [blue]="bg=#89b4fa,fg=#1e1e2e"
-  [red]="bg=#f38ba8,fg=#1e1e2e"
-  [purple]="bg=#cba6f7,fg=#1e1e2e"
-  [orange]="bg=#fab387,fg=#1e1e2e"
-  [pink]="bg=#f5c2e7,fg=#1e1e2e"
-  [teal]="bg=#94e2d5,fg=#1e1e2e"
-  [sky]="bg=#89dceb,fg=#1e1e2e"
-  [white]="bg=#cdd6f4,fg=#1e1e2e"
-  [dark]="bg=#313244,fg=#cdd6f4"
+  [green]="bg=#6b7e6d,fg=#1e1e2e"
+  [yellow]="bg=#8a836e,fg=#1e1e2e"
+  [blue]="bg=#636e7a,fg=#1e1e2e"
+  [red]="bg=#7a6565,fg=#1e1e2e"
+  [purple]="bg=#706a78,fg=#1e1e2e"
+  [orange]="bg=#7a6e63,fg=#1e1e2e"
+  [pink]="bg=#786b73,fg=#1e1e2e"
+  [teal]="bg=#637873,fg=#1e1e2e"
+  [sky]="bg=#637078,fg=#1e1e2e"
+  [white]="bg=#737378,fg=#1e1e2e"
+  [dark]="bg=#313244,fg=#737378"
 )
 
 THEME_ORDER=(green yellow blue red purple orange pink teal sky white dark)
