@@ -40,3 +40,4 @@ mouse-scroll-multiplier = 0.95
 
 # Disable terminal focus reporting to prevent focus-locking with Claude Code
 #shell-integration-features = no-focus-reporting
+window-inherit-working-directory = false

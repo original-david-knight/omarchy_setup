@@ -117,7 +117,7 @@ export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/usr/lib/libcusparse_lt/lib64"
 export OPENSSL_LIB_DIR="/usr/lib/openssl-1.0"
 export OPENSSL_INCLUDE_DIR="/usr/include/openssl-1.0"
 
-printf "\nHello David.\n\n"
+greet
 
 #show starship prompt.  install starship to make this work
 eval "$(starship init bash)"

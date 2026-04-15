@@ -1,0 +1,14 @@
+[Unit]
+Description=Recover Razer Basilisk V3 if it misses USB enumeration at boot
+After=local-fs.target systemd-udevd.service
+Before=graphical.target
+ConditionPathExists=/sys/bus/usb/drivers/usb/bind
+ConditionPathExists=/sys/bus/usb/drivers/usb/unbind
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ensure-razer-basilisk-mouse
+
+[Install]
+WantedBy=multi-user.target
+WantedBy=graphical.target

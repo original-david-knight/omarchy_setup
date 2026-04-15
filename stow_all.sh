@@ -18,6 +18,7 @@ else
 fi
 
 stow --target=../  tmux
+stow --target=../  zellij
 rm -rf ../.config/hypr
 stow --target=../ hypr
 rm -rf ../.config/starship*
@@ -33,5 +34,4 @@ else
 fi
 mkdir -p ../.config/Code/User
 stow --target=../ vscode
-
 

@@ -1,0 +1,4 @@
+# Keep the Genesys hub chain and Basilisk out of autosuspend.
+ACTION=="add", SUBSYSTEM=="usb", KERNEL=="7-2", ATTR{idVendor}=="05e3", ATTR{idProduct}=="0610", TEST=="power/control", ATTR{power/control}="on"
+ACTION=="add", SUBSYSTEM=="usb", KERNEL=="7-2.1", ATTR{idVendor}=="05e3", ATTR{idProduct}=="0610", TEST=="power/control", ATTR{power/control}="on"
+ACTION=="add", SUBSYSTEM=="usb", KERNEL=="7-2.1.1", ATTR{idVendor}=="1532", ATTR{idProduct}=="0099", TEST=="power/control", ATTR{power/control}="on"

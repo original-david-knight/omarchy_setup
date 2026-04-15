@@ -1,0 +1,94 @@
+#!/bin/bash
+
+set -euo pipefail
+
+# The Basilisk occasionally fails USB enumeration on cold boot until its
+# downstream hub is recycled. These paths match the current stable topology:
+#   7-2     upstream Genesys hub
+#   7-2.1   downstream Genesys hub with mouse/webcam/mic
+#   7-2.1.1 Razer Basilisk V3
+ROOT_HUB_PATH="${ROOT_HUB_PATH:-7-2}"
+SUB_HUB_PATH="${SUB_HUB_PATH:-7-2.1}"
+MOUSE_PATH="${MOUSE_PATH:-7-2.1.1}"
+USB_DRIVER_DIR="/sys/bus/usb/drivers/usb"
+BOOT_WAIT_SECONDS="${BOOT_WAIT_SECONDS:-15}"
+POST_RESET_WAIT_SECONDS="${POST_RESET_WAIT_SECONDS:-6}"
+RECOVERY_RETRIES="${RECOVERY_RETRIES:-3}"
+
+log() {
+  logger -t ensure-razer-basilisk-mouse "$*"
+}
+
+device_path() {
+  local path="$1"
+  printf '%s/%s' "/sys/bus/usb/devices" "$path"
+}
+
+wait_for_device() {
+  local path="$1"
+  local timeout="$2"
+  local deadline=$((SECONDS + timeout))
+
+  while (( SECONDS < deadline )); do
+    if [[ -e "$(device_path "$path")" ]]; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  return 1
+}
+
+set_power_on() {
+  local path="$1"
+  local control_path
+  control_path="$(device_path "$path")/power/control"
+
+  if [[ -e "$control_path" ]]; then
+    echo on > "$control_path"
+  fi
+}
+
+reset_hub() {
+  local path="$1"
+
+  echo "$path" > "$USB_DRIVER_DIR/unbind"
+  sleep 2
+  echo "$path" > "$USB_DRIVER_DIR/bind"
+}
+
+main() {
+  if ! wait_for_device "$SUB_HUB_PATH" "$BOOT_WAIT_SECONDS"; then
+    log "USB hub $SUB_HUB_PATH never appeared during boot window; skipping Basilisk recovery"
+    exit 0
+  fi
+
+  set_power_on "$ROOT_HUB_PATH"
+  set_power_on "$SUB_HUB_PATH"
+
+  if [[ -e "$(device_path "$MOUSE_PATH")" ]]; then
+    set_power_on "$MOUSE_PATH"
+    log "Basilisk already enumerated at $MOUSE_PATH; no recovery needed"
+    exit 0
+  fi
+
+  for attempt in $(seq 1 "$RECOVERY_RETRIES"); do
+    log "Basilisk missing at $MOUSE_PATH; resetting hub $SUB_HUB_PATH (attempt $attempt/$RECOVERY_RETRIES)"
+    reset_hub "$SUB_HUB_PATH"
+
+    if wait_for_device "$SUB_HUB_PATH" "$POST_RESET_WAIT_SECONDS"; then
+      set_power_on "$ROOT_HUB_PATH"
+      set_power_on "$SUB_HUB_PATH"
+    fi
+
+    if wait_for_device "$MOUSE_PATH" "$POST_RESET_WAIT_SECONDS"; then
+      set_power_on "$MOUSE_PATH"
+      log "Basilisk recovered successfully after hub reset"
+      exit 0
+    fi
+  done
+
+  log "Basilisk still missing at $MOUSE_PATH after $RECOVERY_RETRIES recovery attempts"
+}
+
+main "$@"

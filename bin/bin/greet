@@ -1,0 +1,23 @@
+#!/bin/bash
+
+# Colors
+C='\e[0;36m'    # cyan
+D='\e[0;35m'    # magenta
+W='\e[0;37m'    # white
+G='\e[0;32m'    # green
+Y='\e[0;33m'    # yellow
+R='\e[0m'       # reset
+
+# Metrics
+DISK=$(df -h / --output=used,size,pcent 2>/dev/null | awk 'NR==2{gsub(/^ +| +$/,"",$0); print}')
+MEM=$(free -m | awk '/Mem:/{printf "%d/%d MiB (%d%%)", $3, $2, $3*100/$2}')
+TIME=$(date '+%a %b %d, %I:%M %p')
+
+# Display
+echo ""
+echo -e "  ${D}   /V\\\\          ${W}${TIME}${R}"
+echo -e "  ${D}  /   \\\\         ${G} ${DISK}${R}"
+echo -e "  ${D} |() ()|        ${Y} ${MEM}${R}"
+echo -e "  ${D}  \\\\ ^ /${R}"
+echo -e "  ${D}   |+|${R}"
+echo ""

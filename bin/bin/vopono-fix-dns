@@ -1,0 +1,14 @@
+#!/bin/bash
+# Watch for vopono/OpenVPN overriding host DNS on eno1 and revert it.
+# Runs in the background, polls for 60s, then exits.
+(
+  for _ in $(seq 1 60); do
+    current_dns=$(resolvectl dns eno1 2>/dev/null)
+    if [[ "$current_dns" == *"10.98.0"* || "$current_dns" == *"10.0.0"* ]] && [[ "$current_dns" != *"8.8.8.8"* ]]; then
+      resolvectl dns eno1 8.8.8.8 8.8.4.4
+      resolvectl domain eno1 ""
+      break
+    fi
+    sleep 1
+  done
+) &
