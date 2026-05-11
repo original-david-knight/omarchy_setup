@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+branding_dir="$config_home/omarchy/branding"
+art_txt="$branding_dir/guinea-pig-plymouth.txt"
+logo_png="$branding_dir/guinea-pig-plymouth.png"
+
+background="${OMARCHY_PLYMOUTH_BACKGROUND:-#1a1b26}"
+foreground="${OMARCHY_PLYMOUTH_FOREGROUND:-#c0caf5}"
+font="${OMARCHY_PLYMOUTH_ASCII_FONT:-JetBrainsMono-NFM-Regular}"
+point_size="${OMARCHY_PLYMOUTH_ASCII_POINT_SIZE:-24}"
+
+if [[ ! -f "$art_txt" ]]; then
+  echo "Missing Plymouth ASCII art: $art_txt" >&2
+  exit 1
+fi
+
+for command_name in magick omarchy-plymouth-set; do
+  if ! command -v "$command_name" >/dev/null 2>&1; then
+    echo "Missing required command: $command_name" >&2
+    exit 1
+  fi
+done
+
+if ! sudo -n true 2>/dev/null; then
+  echo "Skipping Plymouth guinea pig: sudo is not available without a password." >&2
+  exit 0
+fi
+
+tmp_logo="$(mktemp --suffix=.png)"
+trap 'rm -f "$tmp_logo"' EXIT
+
+magick \
+  -background none \
+  -fill "$foreground" \
+  -font "$font" \
+  -pointsize "$point_size" \
+  -interline-spacing -2 \
+  "label:@$art_txt" \
+  -trim +repage \
+  -gravity center \
+  -extent 800x188 \
+  "$tmp_logo"
+
+install -m 0644 "$tmp_logo" "$logo_png"
+omarchy-plymouth-set "$background" "$foreground" "$logo_png"

@@ -14,6 +14,7 @@
 . ./install_npm.sh
 . ./install_codex.sh
 . ./install_dotnet.sh
+. ./install_asteroids.sh
 . ./setup_bloothtooth.sh
 . ./install_mouse_fix.sh
 . ./install_postresql.sh
