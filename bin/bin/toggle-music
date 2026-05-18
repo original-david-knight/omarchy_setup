@@ -1,14 +1,37 @@
 #!/bin/bash
 
-# Toggle the music special workspace, launching YouTube Music if not already running.
-# The live title can change to the current track, so match the Chrome app identity too.
-hyprctl dispatch togglespecialworkspace music
-hyprctl clients -j | jq -e '
-  any(.[]; (
-    ((.class // "") | test("music\\.youtube\\.com"; "i")) or
-    ((.initialClass // "") | test("music\\.youtube\\.com"; "i")) or
-    ((.initialTitle // "") | test("music\\.youtube\\.com"; "i")) or
-    ((.title // "") | test("YouTube Music"; "i"))
-  ))
-' > /dev/null 2>&1 || \
+# Toggle the music special workspace, launching YouTube Music as a Chrome app
+# if the app window is not already running. A normal browser tab titled
+# "YouTube Music" should not count as the app window.
+music_workspace="special:music"
+clients=$(hyprctl clients -j)
+special_visible=$(hyprctl monitors -j | jq -e --arg workspace "$music_workspace" \
+  'any(.[]; .specialWorkspace.name == $workspace)' >/dev/null && echo true || echo false)
+
+music_filter='
+  ((.class // "") | test("music\\.youtube\\.com"; "i")) or
+  ((.initialClass // "") | test("music\\.youtube\\.com"; "i")) or
+  ((.initialTitle // "") | test("^music\\.youtube\\.com"; "i"))
+'
+
+mapfile -t music_addresses < <(jq -r ".[] | select($music_filter) | .address" <<< "$clients")
+
+if ((${#music_addresses[@]} == 0)); then
+  [[ $special_visible == true ]] || hyprctl dispatch togglespecialworkspace music
   omarchy-launch-webapp "https://music.youtube.com"
+  exit
+fi
+
+mapfile -t misplaced_addresses < <(
+  jq -r --arg workspace "$music_workspace" ".[] | select($music_filter) | select(.workspace.name != \$workspace) | .address" <<< "$clients"
+)
+
+for address in "${misplaced_addresses[@]}"; do
+  hyprctl dispatch movetoworkspacesilent "$music_workspace,address:$address"
+done
+
+if [[ $special_visible == true && ${#misplaced_addresses[@]} == 0 ]]; then
+  hyprctl dispatch togglespecialworkspace music
+elif [[ $special_visible != true ]]; then
+  hyprctl dispatch togglespecialworkspace music
+fi
