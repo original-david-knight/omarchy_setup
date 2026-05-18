@@ -1,0 +1,205 @@
+#!/usr/bin/env bash
+
+set -u
+
+HYPRCTL="${HYPRCTL:-hyprctl}"
+JQ="${JQ:-jq}"
+UDEVADM="${UDEVADM:-udevadm}"
+POLL_INTERVAL_SECONDS="${POLL_INTERVAL_SECONDS:-5}"
+FORCE_REAPPLY_SECONDS="${FORCE_REAPPLY_SECONDS:-30}"
+TOUCHPAD_NAME_REGEX="${TOUCHPAD_NAME_REGEX:-touchpad|trackpad}"
+LOG_TAG="auto-touchpad-toggle"
+
+log() {
+  logger -t "$LOG_TAG" "$*" 2>/dev/null || printf '%s\n' "$*" >&2
+}
+
+require_command() {
+  local command="$1"
+
+  if ! command -v "$command" >/dev/null 2>&1; then
+    log "Missing required command: $command"
+    exit 1
+  fi
+}
+
+device_has_property() {
+  local properties="$1"
+  local property="$2"
+
+  case $'\n'"$properties"$'\n' in
+    *$'\n'"$property"$'\n'*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+read_udev_properties() {
+  local device="$1"
+  local major_minor data_file line
+
+  if [[ -r "$device/dev" ]]; then
+    IFS= read -r major_minor < "$device/dev"
+    data_file="/run/udev/data/c$major_minor"
+
+    if [[ -r "$data_file" ]]; then
+      while IFS= read -r line; do
+        [[ "$line" == E:* ]] && printf '%s\n' "${line#E:}"
+      done < "$data_file"
+
+      return 0
+    fi
+  fi
+
+  "$UDEVADM" info --query=property --path="$device" 2>/dev/null || true
+}
+
+external_mouse_present() {
+  local device properties
+
+  for device in /sys/class/input/event*; do
+    [[ -e "$device" ]] || continue
+
+    properties="$(read_udev_properties "$device")"
+
+    device_has_property "$properties" "ID_INPUT_MOUSE=1" || continue
+    device_has_property "$properties" "ID_INPUT_TOUCHPAD=1" && continue
+    device_has_property "$properties" "ID_INPUT_POINTINGSTICK=1" && continue
+    device_has_property "$properties" "ID_INTEGRATION=internal" && continue
+
+    if device_has_property "$properties" "ID_INTEGRATION=external" ||
+      device_has_property "$properties" "ID_BUS=bluetooth" ||
+      device_has_property "$properties" "ID_BUS=usb"; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+touchpad_names() {
+  "$HYPRCTL" devices -j 2>/dev/null |
+    "$JQ" -r --arg regex "$TOUCHPAD_NAME_REGEX" '
+      .mice[]?.name
+      | select(test($regex; "i"))
+    '
+}
+
+set_touchpads_enabled() {
+  local enabled="$1"
+  local name found=0
+
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    found=1
+
+    if ! "$HYPRCTL" -r -- keyword "device[$name]:enabled" "$enabled" >/dev/null 2>&1; then
+      log "Failed to set touchpad '$name' enabled=$enabled"
+    fi
+  done < <(touchpad_names)
+
+  [[ "$found" -eq 1 ]]
+}
+
+desired_touchpad_state() {
+  if external_mouse_present; then
+    printf 'false\n'
+  else
+    printf 'true\n'
+  fi
+}
+
+apply_state() {
+  local desired="$1"
+  local should_log="${2:-true}"
+
+  if set_touchpads_enabled "$desired"; then
+    if [[ "$should_log" == "true" ]]; then
+      if [[ "$desired" == "true" ]]; then
+        log "Enabled touchpad because no external mouse is present"
+      else
+        log "Disabled touchpad because an external mouse is present"
+      fi
+    fi
+  else
+    [[ "$should_log" == "true" ]] && log "No Hyprland touchpad device found"
+  fi
+}
+
+wait_for_hyprland() {
+  local attempt
+
+  for attempt in {1..30}; do
+    if "$HYPRCTL" devices -j >/dev/null 2>&1; then
+      return 0
+    fi
+
+    sleep 1
+  done
+
+  log "Hyprland did not become ready"
+  return 1
+}
+
+print_status() {
+  local desired
+
+  desired="$(desired_touchpad_state)"
+
+  if [[ "$desired" == "true" ]]; then
+    printf 'External mouse: no\n'
+    printf 'Touchpad target: enabled\n'
+  else
+    printf 'External mouse: yes\n'
+    printf 'Touchpad target: disabled\n'
+  fi
+
+  printf 'Touchpads:\n'
+  touchpad_names | sed 's/^/  - /'
+}
+
+main() {
+  local last_desired="" last_applied_at=0 desired now
+
+  require_command "$HYPRCTL"
+  require_command "$JQ"
+  require_command "$UDEVADM"
+  wait_for_hyprland || exit 1
+
+  case "${1:-}" in
+    --once)
+      apply_state "$(desired_touchpad_state)"
+      exit 0
+      ;;
+    --status)
+      print_status
+      exit 0
+      ;;
+    "")
+      ;;
+    *)
+      printf 'Usage: %s [--once|--status]\n' "${0##*/}" >&2
+      exit 2
+      ;;
+  esac
+
+  while true; do
+    desired="$(desired_touchpad_state)"
+    now="$SECONDS"
+
+    if [[ "$desired" != "$last_desired" ]] ||
+      (( now - last_applied_at >= FORCE_REAPPLY_SECONDS )); then
+      if [[ "$desired" != "$last_desired" ]]; then
+        apply_state "$desired"
+      else
+        apply_state "$desired" false
+      fi
+
+      last_desired="$desired"
+      last_applied_at="$now"
+    fi
+
+    sleep "$POLL_INTERVAL_SECONDS"
+  done
+}
+
+main "$@"
