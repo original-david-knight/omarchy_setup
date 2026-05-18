@@ -16,6 +16,7 @@
 . ./install_dotnet.sh
 . ./install_asteroids.sh
 . ./setup_bloothtooth.sh
+. ./install_alsa_utils.sh
 . ./install_mouse_fix.sh
 . ./install_postresql.sh
 . ./install_slack.sh

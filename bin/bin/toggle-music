@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# Toggle the music special workspace, launching YouTube Music if not already running.
+# The live title can change to the current track, so match the Chrome app identity too.
+hyprctl dispatch togglespecialworkspace music
+hyprctl clients -j | jq -e '
+  any(.[]; (
+    ((.class // "") | test("music\\.youtube\\.com"; "i")) or
+    ((.initialClass // "") | test("music\\.youtube\\.com"; "i")) or
+    ((.initialTitle // "") | test("music\\.youtube\\.com"; "i")) or
+    ((.title // "") | test("YouTube Music"; "i"))
+  ))
+' > /dev/null 2>&1 || \
+  omarchy-launch-webapp "https://music.youtube.com"

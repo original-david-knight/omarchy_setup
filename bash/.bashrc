@@ -46,6 +46,34 @@ shopt -s cmdhist # save multi-line commands in history as single line
 #ignore upper and lowercase when TAB completion
 bind "set completion-ignore-case on"
 
+# Use a simpler fzf history widget than the stock one so the highlighted row is
+# exactly the command that gets inserted into the prompt.
+__omarchy_fzf_history__() {
+  local selected
+  local fzf_cmd=(fzf)
+  local fzf_opts=(--height "${FZF_TMUX_HEIGHT:-40%}" --min-height 20+ --reverse --scheme=history --no-sort --highlight-line --query "$READLINE_LINE")
+
+  if [[ -n ${TMUX_PANE-} ]] && { [[ ${FZF_TMUX:-0} != 0 ]] || [[ -n ${FZF_TMUX_OPTS-} ]]; }; then
+    fzf_cmd=(fzf-tmux ${FZF_TMUX_OPTS:--d${FZF_TMUX_HEIGHT:-40%}} --)
+  fi
+
+  selected=$(
+    HISTTIMEFORMAT= builtin fc -lnr -2147483648 2>/dev/null |
+      awk '{ sub(/^[[:space:]]+/, ""); if (length($0) && !seen[$0]++) print }' |
+      FZF_DEFAULT_OPTS="${FZF_DEFAULT_OPTS-} ${FZF_CTRL_R_OPTS-}" "${fzf_cmd[@]}" "${fzf_opts[@]}"
+  ) || return
+
+  [[ -n $selected ]] || return
+  READLINE_LINE=$selected
+  READLINE_POINT=${#READLINE_LINE}
+}
+
+if [[ $- == *i* ]] && command -v fzf >/dev/null 2>&1; then
+  bind -m emacs-standard -x '"\C-r": __omarchy_fzf_history__'
+  bind -m vi-command -x '"\C-r": __omarchy_fzf_history__'
+  bind -m vi-insert -x '"\C-r": __omarchy_fzf_history__'
+fi
+
 # make less more friendly for non-text input files, see lesspipe(1)
 [ -x /usr/bin/lesspipe ] && eval "$(SHELL=/bin/sh lesspipe)"
 
