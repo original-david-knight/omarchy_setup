@@ -181,6 +181,11 @@ export PATH="$HOME/.local/bin:$PATH"
 export PATH="$PATH:/home/david/.config/.foundry/bin"
 export PATH="$PATH:$HOME/go/bin"
 
+# Prefer user-installed toolchains from the setup scripts.
+export PATH="$HOME/.cargo/bin:$PATH"
+export DOTNET_ROOT="$HOME/.dotnet"
+export PATH="$DOTNET_ROOT:$DOTNET_ROOT/tools:$PATH"
+
 # Disable focus reporting after Claude Code exits to prevent Hyprland focus lock
 claude() {
     command claude "$@"
