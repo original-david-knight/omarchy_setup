@@ -174,5 +174,6 @@
   "claudeCode.allowDangerouslySkipPermissions": true,
   "claudeCode.initialPermissionMode": "bypassPermissions",
   "claudeCode.respectGitIgnore": false,
-  "explorer.confirmPasteNative": false
+  "explorer.confirmPasteNative": false,
+  "chat.disableAIFeatures": true
 }
