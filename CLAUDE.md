@@ -30,8 +30,12 @@ hyprctl reload
 ### Stow Packages
 
 Each top-level directory mirrors home directory structure. `stow_all.sh` automatically selects between variants based on monitor count:
-- Single monitor: `ghostty/`, `waybar_laptop/`
-- Multi-monitor: `ghostty_big_screen/`, `waybar/`
+- Single monitor (laptop): `ghostty/`, `waybar_laptop/`, `bin_laptop/` (touchpad auto-toggle)
+- Multi-monitor (desktop): `ghostty_big_screen/`, `waybar/`
+
+`bin_laptop/` holds laptop-only scripts kept out of the shared `bin/` package. The
+`autostart.conf` entry that launches `~/bin/auto-touchpad-toggle` is guarded with an
+existence test, so it cleanly no-ops on machines where the package isn't stowed.
 
 ### Hyprland Configuration Layering
 

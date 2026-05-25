@@ -26,6 +26,12 @@ rm -rf ../.config/starship*
 stow --target=../ starship
 stow --target=../ ssh
 stow --target=../ bin
+
+# Touchpad auto-toggle is laptop-only; skip on multi-monitor (desktop) setups
+if [ "$monitor_count" -le 1 ]; then
+  stow --target=../ bin_laptop
+fi
+
 rm -rf ../.config/waybar
 
 if [ "$monitor_count" -gt 1 ]; then
