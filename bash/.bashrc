@@ -51,7 +51,7 @@ bind "set completion-ignore-case on"
 __omarchy_fzf_history__() {
   local selected
   local fzf_cmd=(fzf)
-  local fzf_opts=(--height "${FZF_TMUX_HEIGHT:-40%}" --min-height 20+ --reverse --scheme=history --no-sort --highlight-line --query "$READLINE_LINE")
+  local fzf_opts=(--height "${FZF_TMUX_HEIGHT:-40%}" --min-height 20+ --reverse --scheme=history --no-sort --exact --highlight-line --query "$READLINE_LINE")
 
   if [[ -n ${TMUX_PANE-} ]] && { [[ ${FZF_TMUX:-0} != 0 ]] || [[ -n ${FZF_TMUX_OPTS-} ]]; }; then
     fzf_cmd=(fzf-tmux ${FZF_TMUX_OPTS:--d${FZF_TMUX_HEIGHT:-40%}} --)
@@ -191,3 +191,4 @@ claude() {
     command claude "$@"
     printf '\e[?1004l'
 }
+WAYLAND_DISPLAY=wayland-1
