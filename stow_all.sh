@@ -25,11 +25,13 @@ stow --target=../ hypr
 rm -rf ../.config/starship*
 stow --target=../ starship
 stow --target=../ ssh
-stow --target=../ bin
+# --no-folding keeps ~/bin a real directory of individual symlinks so the
+# laptop-only bin_laptop package can't be dropped by stow re-folding the tree.
+stow --no-folding --target=../ bin
 
 # Touchpad auto-toggle is laptop-only; skip on multi-monitor (desktop) setups
 if [ "$monitor_count" -le 1 ]; then
-  stow --target=../ bin_laptop
+  stow --no-folding --target=../ bin_laptop
 fi
 
 rm -rf ../.config/waybar
