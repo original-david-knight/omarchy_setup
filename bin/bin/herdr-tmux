@@ -1,0 +1,234 @@
+#!/usr/bin/env python3
+"""tmux-style helpers for herdr, driven from [[keys.command]] in config.toml.
+
+herdr binds exactly one key per built-in action, and a few tmux bindings have no
+built-in action at all. This covers the gap by talking to the herdr socket API:
+
+  tab next|prev            cycle tabs                    (tmux: prefix n / prefix p)
+  tab select <n>           focus the nth tab             (tmux: prefix <n>)
+  tab move left|right      reorder the current tab       (tmux: M-S-Left / M-S-Right)
+  workspace next|prev      cycle workspaces              (tmux: prefix N / prefix P)
+  resize <dir> [amount]    grow the pane toward <dir>    (tmux: C-M-S-<arrow>)
+  theme cycle              next built-in theme           (tmux: prefix T)
+
+Run from a herdr keybinding, HERDR_ACTIVE_* is set and used to scope the action;
+run from a plain shell it falls back to whatever herdr currently has focused.
+"""
+
+import json
+import os
+import re
+import socket
+import subprocess
+import sys
+
+CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", "herdr")
+
+# Built-in theme names, in the order `theme cycle` walks them.
+THEMES = [
+    "terminal",
+    "catppuccin",
+    "tokyo-night",
+    "dracula",
+    "nord",
+    "gruvbox",
+    "one-dark",
+    "solarized",
+    "kanagawa",
+    "rose-pine",
+    "vesper",
+]
+
+DIRECTIONS = ("left", "right", "up", "down")
+
+
+def die(message):
+    sys.exit("herdr-tmux: " + message)
+
+
+def socket_path():
+    path = os.environ.get("HERDR_SOCKET_PATH")
+    if path:
+        return path
+    session = os.environ.get("HERDR_SESSION")
+    if session:
+        return os.path.join(CONFIG_DIR, "sessions", session, "herdr.sock")
+    return os.path.join(CONFIG_DIR, "herdr.sock")
+
+
+def call(method, params=None):
+    """One request per connection - the server closes the stream after replying."""
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        sock.connect(socket_path())
+    except OSError as err:
+        die("cannot reach herdr at %s (%s)" % (socket_path(), err))
+    request = {"id": "herdr-tmux", "method": method, "params": params or {}}
+    with sock, sock.makefile("rwb") as stream:
+        stream.write((json.dumps(request) + "\n").encode())
+        stream.flush()
+        line = stream.readline()
+    if not line:
+        die("no response from herdr for %s" % method)
+    reply = json.loads(line.decode())
+    if "error" in reply:
+        die("%s: %s" % (method, reply["error"].get("message", reply["error"])))
+    return reply["result"]
+
+
+def active_workspace_id():
+    workspace = os.environ.get("HERDR_ACTIVE_WORKSPACE_ID")
+    if workspace:
+        return workspace
+    for entry in call("workspace.list")["workspaces"]:
+        if entry.get("focused"):
+            return entry["workspace_id"]
+    die("no focused workspace")
+
+
+def active_pane_id():
+    pane = os.environ.get("HERDR_ACTIVE_PANE_ID")
+    if pane:
+        return pane
+    return call("pane.current")["pane"]["pane_id"]
+
+
+def step(items, current_index, delta):
+    """tmux-style wrap-around, so next from the last entry lands on the first."""
+    return items[(current_index + delta) % len(items)]
+
+
+def index_of_focused(items):
+    for index, entry in enumerate(items):
+        if entry.get("focused"):
+            return index
+    # Nothing focused (herdr detached, say) - treat the first entry as current.
+    return 0
+
+
+def ordered_tabs():
+    """Tabs of the active workspace, in display order."""
+    workspace = active_workspace_id()
+    tabs = call("tab.list", {"workspace_id": workspace})["tabs"]
+    return [tab for tab in tabs if tab["workspace_id"] == workspace]
+
+
+def cmd_tab(args):
+    if not args:
+        die("tab needs next|prev|select|move")
+    action, rest = args[0], args[1:]
+    tabs = ordered_tabs()
+    if not tabs:
+        return
+
+    if action in ("next", "prev"):
+        delta = 1 if action == "next" else -1
+        target = step(tabs, index_of_focused(tabs), delta)
+        call("tab.focus", {"tab_id": target["tab_id"]})
+    elif action == "select":
+        if not rest or not rest[0].isdigit():
+            die("tab select needs a 1-based tab number")
+        position = int(rest[0]) - 1
+        if 0 <= position < len(tabs):
+            call("tab.focus", {"tab_id": tabs[position]["tab_id"]})
+    elif action == "move":
+        if not rest or rest[0] not in ("left", "right"):
+            die("tab move needs left|right")
+        current = index_of_focused(tabs)
+        # insert_index is "put this tab in front of whatever is at that index in
+        # the current order", so a step right has to clear its own slot as well.
+        target = current - 1 if rest[0] == "left" else current + 2
+        # tmux's swap-window -t -1/+1 stops at the ends; do the same.
+        if 0 <= target <= len(tabs):
+            call("tab.move", {"tab_id": tabs[current]["tab_id"], "insert_index": target})
+    else:
+        die("unknown tab action: " + action)
+
+
+def cmd_workspace(args):
+    if not args or args[0] not in ("next", "prev"):
+        die("workspace needs next|prev")
+    workspaces = call("workspace.list")["workspaces"]
+    if not workspaces:
+        return
+    delta = 1 if args[0] == "next" else -1
+    target = step(workspaces, index_of_focused(workspaces), delta)
+    call("workspace.focus", {"workspace_id": target["workspace_id"]})
+
+
+def cmd_resize(args):
+    if not args or args[0] not in DIRECTIONS:
+        die("resize needs one of " + "|".join(DIRECTIONS))
+    params = {"pane_id": active_pane_id(), "direction": args[0]}
+    if len(args) > 1:
+        # herdr amounts are a fraction of the split, not cells; default step is 0.05.
+        params["amount"] = float(args[1])
+    call("pane.resize", params)
+
+
+def config_file():
+    return os.path.realpath(os.path.join(CONFIG_DIR, "config.toml"))
+
+
+def cmd_theme(args):
+    """Rewrite [theme] name in config.toml and hot-reload, like tmux-theme --cycle.
+
+    Unlike the tmux version this is global and persistent: config.toml is a stow
+    symlink, so the new theme lands in the dotfiles repo.
+    """
+    if not args or args[0] != "cycle":
+        die("theme needs cycle")
+    path = config_file()
+    try:
+        with open(path) as handle:
+            text = handle.read()
+    except OSError as err:
+        die("cannot read %s (%s)" % (path, err))
+
+    header = re.search(r"(?m)^\[theme\]\s*$", text)
+    if not header:
+        die("no [theme] section in " + path)
+    # Stay inside [theme]: `name` also exists in other tables.
+    rest = re.search(r"(?m)^\[", text[header.end() :])
+    end = header.end() + (rest.start() if rest else len(text) - header.end())
+
+    active = re.search(r'(?m)^\s*name\s*=\s*"([^"]+)"', text[header.end() : end])
+    current = active.group(1) if active else None
+    nxt = THEMES[(THEMES.index(current) + 1) % len(THEMES)] if current in THEMES else THEMES[0]
+
+    if active:
+        start = header.end() + active.start(1)
+        stop = header.end() + active.end(1)
+        text = text[:start] + nxt + text[stop:]
+    else:
+        # No active name= line: add one under [theme], next to the commented default.
+        text = text[: header.end()] + '\nname = "%s"' % nxt + text[header.end() :]
+
+    with open(path, "w") as handle:
+        handle.write(text)
+
+    subprocess.run(["herdr", "server", "reload-config"], check=False,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["herdr", "notification", "show", "Theme: " + nxt], check=False,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+COMMANDS = {
+    "tab": cmd_tab,
+    "workspace": cmd_workspace,
+    "resize": cmd_resize,
+    "theme": cmd_theme,
+}
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help"):
+        sys.exit(__doc__)
+    command = COMMANDS.get(argv[0])
+    if not command:
+        die("unknown command: %s (try %s)" % (argv[0], "|".join(sorted(COMMANDS))))
+    command(argv[1:])
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

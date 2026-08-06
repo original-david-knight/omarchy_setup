@@ -1,0 +1,227 @@
+# herdr configuration
+#
+# Keybindings are ported from ~/.config/tmux/tmux.conf. herdr's model maps onto
+# tmux's like this:
+#
+#   tmux session  ->  herdr workspace
+#   tmux window   ->  herdr tab
+#   tmux pane     ->  herdr pane
+#
+# herdr allows one key per built-in action, so tmux bindings that need a second
+# key - plus the handful with no built-in action (tab reordering, directional
+# resize, theme cycling) - are wired to ~/bin/herdr-tmux under [[keys.command]].
+#
+# `herdr config check` validates this file; prefix+q reloads it in a live session.
+
+# Config is provisioned by this repo, so skip the first-run notification setup.
+onboarding = false
+
+[theme]
+# Built-in themes: catppuccin, terminal, tokyo-night, dracula, nord,
+#                  gruvbox, one-dark, solarized, kanagawa, rose-pine,
+#                  vesper
+# "terminal" reuses the host palette, so herdr follows the current omarchy theme.
+# prefix+shift+T cycles this (see the theme entry under [[keys.command]]).
+name = "terminal"
+
+[keys]
+# tmux: unbind C-b / set -g prefix C-j
+prefix = "ctrl+j"
+
+## Session-level ---------------------------------------------------------------
+help = "prefix+?"                     # tmux: prefix ? (list-keys)
+detach = "prefix+d"                   # tmux: prefix d (detach-client)
+reload_config = "prefix+q"            # tmux: bind q source-file
+settings = "prefix+shift+s"           # no tmux equivalent
+workspace_picker = "prefix+s"         # tmux: prefix s (choose-session)
+goto = "prefix+w"                     # tmux: prefix w (choose-tree)
+toggle_sidebar = "prefix+b"           # no tmux equivalent
+edit_scrollback = "prefix+e"          # no tmux equivalent
+
+## Workspaces = tmux sessions ---------------------------------------------------
+new_workspace = "prefix+shift+c"      # tmux: bind C new-session
+rename_workspace = "prefix+shift+r"   # tmux: bind R rename-session
+close_workspace = "prefix+shift+k"    # tmux: bind K kill-session
+previous_workspace = "alt+up"         # tmux: bind -n M-Up switch-client -p
+next_workspace = "alt+down"           # tmux: bind -n M-Down switch-client -n
+
+## Tabs = tmux windows ----------------------------------------------------------
+new_tab = "prefix+c"                  # tmux: bind c new-window
+rename_tab = "prefix+r"               # tmux: bind r rename-window
+close_tab = "prefix+k"                # tmux: bind k kill-window
+switch_tab = "alt+1..9"               # tmux: bind -n M-1 .. M-9 select-window
+previous_tab = "alt+left"             # tmux: bind -n M-Left select-window -t -1
+next_tab = "alt+right"                # tmux: bind -n M-Right select-window -t +1
+
+## Panes -------------------------------------------------------------------------
+split_horizontal = "prefix+h"         # tmux: bind h split-window -v (opens below)
+split_vertical = "prefix+v"           # tmux: bind v split-window -h (opens right)
+close_pane = "prefix+x"               # tmux: bind x kill-pane
+zoom = "prefix+z"                     # tmux: prefix z (resize-pane -Z)
+resize_mode = "prefix+ctrl+r"         # tmux has no mode; C-M-S-arrows resize directly
+rename_pane = "prefix+shift+e"        # no tmux equivalent
+cycle_pane_next = "prefix+o"          # tmux: prefix o (select-pane -t :.+)
+cycle_pane_previous = "prefix+shift+o"
+last_pane = "prefix+tab"              # tmux: prefix ; (last-pane)
+
+focus_pane_left = "ctrl+alt+left"     # tmux: bind -n C-M-Left select-pane -L
+focus_pane_down = "ctrl+alt+down"     # tmux: bind -n C-M-Down select-pane -D
+focus_pane_up = "ctrl+alt+up"         # tmux: bind -n C-M-Up select-pane -U
+focus_pane_right = "ctrl+alt+right"   # tmux: bind -n C-M-Right select-pane -R
+
+# Navigate mode (prefix+w) keeps the tmux-ish vi keys, since focus_pane_* above
+# is on the arrow chords rather than hjkl.
+navigate_pane_left = "h"
+navigate_pane_down = "j"
+navigate_pane_up = "k"
+navigate_pane_right = "l"
+navigate_workspace_up = "up"
+navigate_workspace_down = "down"
+
+## tmux bindings with no built-in herdr action, or that need a second key --------
+# `type = "shell"` runs detached; herdr exports HERDR_ACTIVE_* to each command.
+
+# tmux: prefix n / prefix p (next-window / previous-window). The arrow-key form
+# above holds the built-in action, so these go through the helper.
+[[keys.command]]
+key = "prefix+n"
+type = "shell"
+command = "$HOME/bin/herdr-tmux tab next"
+description = "next tab"
+
+[[keys.command]]
+key = "prefix+p"
+type = "shell"
+command = "$HOME/bin/herdr-tmux tab prev"
+description = "previous tab"
+
+# tmux: prefix <n> (select-window -t n), alongside the M-1..M-9 form above.
+[[keys.command]]
+key = "prefix+1"
+type = "shell"
+command = "$HOME/bin/herdr-tmux tab select 1"
+description = "tab 1"
+
+[[keys.command]]
+key = "prefix+2"
+type = "shell"
+command = "$HOME/bin/herdr-tmux tab select 2"
+description = "tab 2"
+
+[[keys.command]]
+key = "prefix+3"
+type = "shell"
+command = "$HOME/bin/herdr-tmux tab select 3"
+description = "tab 3"
+
+[[keys.command]]
+key = "prefix+4"
+type = "shell"
+command = "$HOME/bin/herdr-tmux tab select 4"
+description = "tab 4"
+
+[[keys.command]]
+key = "prefix+5"
+type = "shell"
+command = "$HOME/bin/herdr-tmux tab select 5"
+description = "tab 5"
+
+[[keys.command]]
+key = "prefix+6"
+type = "shell"
+command = "$HOME/bin/herdr-tmux tab select 6"
+description = "tab 6"
+
+[[keys.command]]
+key = "prefix+7"
+type = "shell"
+command = "$HOME/bin/herdr-tmux tab select 7"
+description = "tab 7"
+
+[[keys.command]]
+key = "prefix+8"
+type = "shell"
+command = "$HOME/bin/herdr-tmux tab select 8"
+description = "tab 8"
+
+[[keys.command]]
+key = "prefix+9"
+type = "shell"
+command = "$HOME/bin/herdr-tmux tab select 9"
+description = "tab 9"
+
+# tmux: bind -n M-S-Left / M-S-Right swap-window -t -1/+1 \; select-window
+[[keys.command]]
+key = "alt+shift+left"
+type = "shell"
+command = "$HOME/bin/herdr-tmux tab move left"
+description = "move tab left"
+
+[[keys.command]]
+key = "alt+shift+right"
+type = "shell"
+command = "$HOME/bin/herdr-tmux tab move right"
+description = "move tab right"
+
+# tmux: bind -n C-M-S-<arrow> resize-pane -L/-D/-U/-R 5
+[[keys.command]]
+key = "ctrl+alt+shift+left"
+type = "shell"
+command = "$HOME/bin/herdr-tmux resize left"
+description = "resize pane left"
+
+[[keys.command]]
+key = "ctrl+alt+shift+down"
+type = "shell"
+command = "$HOME/bin/herdr-tmux resize down"
+description = "resize pane down"
+
+[[keys.command]]
+key = "ctrl+alt+shift+up"
+type = "shell"
+command = "$HOME/bin/herdr-tmux resize up"
+description = "resize pane up"
+
+[[keys.command]]
+key = "ctrl+alt+shift+right"
+type = "shell"
+command = "$HOME/bin/herdr-tmux resize right"
+description = "resize pane right"
+
+# tmux: bind P switch-client -p / bind N switch-client -n. The built-in actions
+# are on M-Up/M-Down above, so the prefix forms go through the helper.
+[[keys.command]]
+key = "prefix+shift+p"
+type = "shell"
+command = "$HOME/bin/herdr-tmux workspace prev"
+description = "previous workspace"
+
+[[keys.command]]
+key = "prefix+shift+n"
+type = "shell"
+command = "$HOME/bin/herdr-tmux workspace next"
+description = "next workspace"
+
+# tmux: bind T run-shell "tmux-theme --cycle"
+[[keys.command]]
+key = "prefix+shift+t"
+type = "shell"
+command = "$HOME/bin/herdr-tmux theme cycle"
+description = "cycle theme"
+
+[ui]
+# tmux: bind c new-window creates the window immediately, no name prompt.
+prompt_new_tab_name = false
+
+# tmux ran with `set -g mouse off`; herdr's mouse UI is on by default. Set this
+# to false to hand clicks back to the terminal.
+# mouse_capture = true
+
+# tmux killed panes/windows/sessions without asking. Closing a workspace here
+# still confirms first; set false to match tmux's bind K exactly.
+# confirm_close = true
+
+# tmux's status line echoed messages like "Theme: green"; herdr's in-app toasts
+# are the closest thing.
+[ui.toast]
+delivery = "herdr"

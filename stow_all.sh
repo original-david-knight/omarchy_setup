@@ -19,6 +19,9 @@ fi
 
 stow --target=../  tmux
 stow --target=../  zellij
+# --no-folding keeps ~/.config/herdr a real directory: herdr writes its sockets,
+# logs and session state next to config.toml, which must not land in this repo.
+stow --no-folding --target=../ herdr
 stow --target=../  omarchy
 rm -rf ../.config/hypr
 stow --target=../ hypr
