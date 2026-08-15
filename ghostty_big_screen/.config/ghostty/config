@@ -3,9 +3,10 @@
 
 # Font Configuration
 font-family = CaskaydiaMono Nerd Font
-font-size = 24 
+font-size = 16
 
 # Window Configuration
+gtk-titlebar = false
 window-padding-x = 14
 window-padding-y = 0
 

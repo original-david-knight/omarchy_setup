@@ -28,8 +28,12 @@ require("default.hypr.toggles")
 -- Add any other personal Hyprland configuration below.
 -- o.window("qemu", { workspace = "5" })
 
--- Restore pre-Quattro application workspace routing.
-o.window("music\\.youtube\\.com", { workspace = "special:music" })
+-- Restore pre-Quattro application workspace routing. Chrome's XWayland app
+-- window has a generic class, so identify YouTube Music by its initial title.
+o.window(
+  { initial_title = "^music\\.youtube\\.com.*" },
+  { workspace = "special:music", tile = true }
+)
 o.window("^[sS]lack$", { workspace = "special:slack" })
 o.window("^(obsidian|md\\.obsidian\\.Obsidian)$", { workspace = "special:slack" })
 o.window("^code$", { workspace = "1" })
