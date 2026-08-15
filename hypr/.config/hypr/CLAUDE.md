@@ -1,72 +1,65 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This directory is the user-owned Hyprland configuration for Omarchy Quattro.
+It is deployed to `~/.config/hypr/` with GNU Stow.
 
-## Overview
+## Configuration layering
 
-Hyprland window manager configuration for an Omarchy-based Arch Linux desktop. These files are deployed via GNU Stow to `~/.config/hypr/`.
+`hyprland.lua` loads configuration in this order:
 
-## Architecture
+1. `/usr/share/omarchy/default/hypr/bootstrap.lua`
+2. `default.hypr.omarchy`, containing packaged Omarchy defaults and the active
+   theme
+3. User modules in this directory
+4. Omarchy's dynamic toggle state
 
-The configuration uses a layered approach:
+Never edit `/usr/share/omarchy/`. Local behavior belongs in the user modules
+loaded after the defaults.
 
-1. **Omarchy defaults** (sourced from `~/.local/share/omarchy/default/hypr/`) provide base behavior
-2. **Theme settings** (sourced from `~/.config/omarchy/current/theme/`) control colors and visual style
-3. **Local overrides** (this directory) customize behavior on top of defaults
+## Files
 
-This layering is defined in `hyprland.conf` - defaults are sourced first, then local files override them.
+| File | Responsibility |
+| --- | --- |
+| `hyprland.lua` | Entrypoint and personal application window routing |
+| `monitors.lua` | EDID-based monitor geometry and persistent workspaces |
+| `input.lua` | Keyboard, pointer, touchpad, and terminal scrolling overrides |
+| `bindings.lua` | Personal keybindings |
+| `looknfeel.lua` | Gaps, rounding, HDR, VRR, and opacity overrides |
+| `autostart.lua` | Optional personal startup programs |
+| `hyprsunset.conf` | Hyprsunset profiles; restart with `omarchy restart hyprsunset` |
+| `xdph.conf` | XDG desktop portal screen-sharing configuration |
 
-## File Responsibilities
+The retired pre-Quattro `.conf` entrypoint and its sourced fragments must not
+be reintroduced.
 
-| File | Purpose |
-|------|---------|
-| `hyprland.conf` | Main entry point, sources all other configs and defines window rules |
-| `monitors.conf` | Display setup using EDID descriptors for stability across sleep/wake |
-| `bindings.conf` | Application keybindings (terminal, browser, apps) |
-| `input.conf` | Keyboard/mouse/touchpad settings |
-| `looknfeel.conf` | Visual tweaks (gaps, rounding) |
-| `autostart.conf` | Extra processes to launch at login |
-| `envs.conf` | Environment variables (requires Hyprland relaunch) |
-| `hypridle.conf` | Idle timeout behavior (screensaver, lock, dpms) |
-| `hyprlock.conf` | Lock screen appearance and fingerprint auth |
-| `hyprsunset.conf` | Night light/color temperature (disabled by default) |
-| `xdph.conf` | XDG portal settings for screen sharing |
+## Lua patterns
 
-## Key Patterns
-
-**Keybinding syntax**: `bindd = MODIFIERS, KEY, Description, exec, command`
-- Use `uwsm app --` prefix for GUI applications
-- Use `omarchy-launch-or-focus` to toggle existing windows
-- Use `omarchy-launch-webapp` for web apps in Chrome
-
-**Monitor configuration**: Uses EDID descriptors (`desc:Manufacturer Model Serial`) instead of port names (DP-1) for consistent behavior across system restarts.
-
-**Window rules**: Use the new `windowrule { }` block syntax with `match:class` for targeting.
-
-## Commands
-
-```bash
-# Reload config without restarting
-hyprctl reload
-
-# Test a keybinding
-hyprctl dispatch exec <command>
-
-# Debug monitor setup
-hyprctl monitors
-
-# Check active window class (for window rules)
-hyprctl activewindow
+```lua
+o.bind("SUPER + SHIFT + R", "SSH", "alacritty -e ssh host")
+o.window("^org.example.App$", { workspace = "2" })
+o.launch_on_start("my-service")
 ```
 
-## Omarchy Integration
+Before replacing an Omarchy keybinding, inspect
+`omarchy menu keybindings --print` and call `hl.unbind` first.
 
-Custom `omarchy-*` commands are available in `~/.local/share/omarchy/bin/`:
-- `omarchy-launch-or-focus` - Focus existing window or launch new
-- `omarchy-launch-webapp` - Open URL in dedicated Chrome window
-- `omarchy-launch-editor` - Launch configured editor
-- `omarchy-launch-tui` - Launch TUI app in floating terminal
-- `omarchy-cmd-screenshot` - Screenshot with region/window selection
-- `omarchy-lock-screen` - Lock screen and 1password
+Window class regexes fully match and are case-sensitive. Check live values with
+`hyprctl clients -j`; current Hyprland window-rule documentation is at
+<https://wiki.hypr.land/Configuring/Basics/Window-Rules/>.
 
-Reference: https://wiki.hyprland.org/Configuring/
+## Validation
+
+After every Lua change:
+
+```bash
+hyprctl reload
+hyprctl configerrors
+```
+
+Useful inspection commands:
+
+```bash
+hyprctl monitors all
+hyprctl clients -j
+omarchy menu keybindings --print
+```

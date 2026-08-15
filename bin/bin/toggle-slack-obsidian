@@ -3,8 +3,10 @@
 
 workspace="special:slack"
 workspace_name="slack"
-slack_class="^[sS]lack$"
-obsidian_class="^obsidian$"
+slack_class='^[sS]lack$'
+# Obsidian used the short class on older installs. Current Quattro packages use
+# the reverse-DNS application ID, so accept both when finding/routing windows.
+obsidian_class='^(obsidian|md\.obsidian\.Obsidian)$'
 
 find_window() {
     local class_regex=$1

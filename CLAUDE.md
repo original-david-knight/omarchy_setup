@@ -1,93 +1,89 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-## Project Overview
-
-Dotfiles repository for an Arch Linux system running Omarchy (a Hyprland-based desktop environment). Configuration files are managed with GNU Stow, which creates symlinks from this repository to the home directory.
+This repository provisions personal configuration on Omarchy Quattro. GNU Stow
+deploys each top-level package into the user's home directory.
 
 ## Commands
 
 ```bash
-# Deploy all configurations (auto-selects laptop vs multi-monitor variants)
-./stow_all.sh
-
-# Deploy a single package
-stow --target=../ <package-name>
-
-# Remove a stowed package
-stow -D --target=../ <package-name>
-
-# Install all dependencies on fresh system
+# Install applications and supporting packages.
 ./install_all.sh
 
-# Reload Hyprland config without restart
+# Deploy configuration. The profile is detected from connected monitors.
+./stow_all.sh
+
+# Override profile detection, including from a TTY or test home.
+OMARCHY_SETUP_PROFILE=laptop ./stow_all.sh
+OMARCHY_SETUP_PROFILE=desktop ./stow_all.sh
+
+# Validate Hyprland after changing Lua config.
 hyprctl reload
+hyprctl configerrors
 ```
 
-## Architecture
+`stow_all.sh` is safe to rerun. It uses `--no-folding`, leaving real directories
+in the home folder and creating links only for files owned by this repository.
+Conflicting files are moved to
+`~/.local/state/omarchy-setup/backups/<timestamp>.<suffix>/` before deployment.
 
-### Stow Packages
+## Stow packages
 
-Each top-level directory mirrors home directory structure. `stow_all.sh` automatically selects between variants based on monitor count:
-- Single monitor (laptop): `ghostty/`, `waybar_laptop/`, `bin_laptop/` (touchpad auto-toggle)
-- Multi-monitor (desktop): `ghostty_big_screen/`, `waybar/`
+Shared packages are `bash`, `tmux`, `zellij`, `herdr`, `omarchy`, `hypr`,
+`starship`, `ssh`, `bin`, and `vscode`.
 
-`bin_laptop/` holds laptop-only scripts kept out of the shared `bin/` package. The
-`autostart.conf` entry that launches `~/bin/auto-touchpad-toggle` is guarded with an
-existence test, so it cleanly no-ops on machines where the package isn't stowed.
+The selected machine profile adds:
 
-`herdr/` is stowed with `--no-folding` because herdr writes sockets, logs and
-session state into `~/.config/herdr/`; folding would symlink that whole directory
-into this repo.
+- `laptop`: `ghostty` and `bin_laptop`
+- `desktop`: `ghostty_big_screen`
 
-### herdr Keybindings
+`bin_laptop` contains the touchpad auto-toggle helper. Hyprland's
+`autostart.lua` launches it only when the executable is present.
 
-`herdr/.config/herdr/config.toml` ports the bindings from `tmux/.config/tmux/tmux.conf`
-(workspace = tmux session, tab = tmux window, prefix = `Ctrl-j`). herdr binds one key
-per built-in action, so tmux bindings that need a second key - and the ones with no
-built-in action at all (tab reordering, directional resize, theme cycling) - run
-`~/bin/herdr-tmux` from `[[keys.command]]` entries, which drives herdr's socket API.
+Quattro owns the Omarchy Shell bar layout in `~/.config/omarchy/shell.json`.
+This repository intentionally leaves that layout alone, but manages the
+shell-wide font size and horizontal bar height through
+`omarchy/.config/omarchy/shell.toml`. The 18 px base font scales the stock
+26 px bar to 39 px.
 
-`herdr config check` only validates TOML syntax; it reports `ok` for nonsense keys
-like `gibberish+zz`. To actually verify a binding, drive the TUI in a scratch session
-and watch the effect over the API:
+`herdr` and `bin` must remain non-folded because those directories also hold
+runtime state or files owned outside this repository. The deployment script
+uses non-folding consistently for every package so profile changes and future
+Omarchy-generated files do not write into the repository.
+
+## Hyprland on Quattro
+
+Hyprland configuration is Lua-based:
+
+1. `hyprland.lua` bootstraps `/usr/share/omarchy/default/hypr/` and loads the
+   packaged Omarchy defaults.
+2. Local `monitors.lua`, `input.lua`, `bindings.lua`, `looknfeel.lua`, and
+   `autostart.lua` override those defaults.
+3. `hyprsunset.conf` and `xdph.conf` remain separate service configuration
+   files and are not part of Hyprland's Lua entrypoint.
+
+Do not restore the retired pre-Quattro `.conf` stack or edit files under
+`/usr/share/omarchy/`.
+
+Use `o.bind` for keybindings, `o.window` for window rules, and
+`o.launch_on_start` for startup applications. Prefer the routed CLI form for
+user-facing commands, such as `omarchy capture screenshot region`.
+
+Monitor rules use EDID descriptions rather than connector names so the layout
+survives port renumbering after sleep or reboot.
+
+## herdr keybindings
+
+`herdr/.config/herdr/config.toml` mirrors the tmux bindings, with workspace =
+tmux session, tab = tmux window, and prefix = `Ctrl-j`. Multi-key operations
+run `~/bin/herdr-tmux`, which drives herdr's socket API.
+
+`herdr config check` only validates TOML syntax. For behavioral testing, use a
+scratch session:
 
 ```bash
 tmux new-session -d -s t -x 200 -y 50 "HERDR_SESSION=scratch herdr"
-tmux send-keys -t t C-j c                      # prefix + c
-HERDR_SESSION=scratch herdr tab list           # confirm it landed
-HERDR_SESSION=scratch herdr server stop && herdr session delete scratch
-```
-
-### Hyprland Configuration Layering
-
-The Hyprland config (`hypr/.config/hypr/hyprland.conf`) uses a three-layer approach:
-
-1. **Omarchy defaults** - Sourced from `~/.local/share/omarchy/default/hypr/` (don't edit)
-2. **Theme settings** - Sourced from `~/.config/omarchy/current/theme/`
-3. **Local overrides** - Files in this repo override defaults
-
-Hyprland-specific documentation is in `hypr/.config/hypr/CLAUDE.md`.
-
-### Key Hyprland Patterns
-
-**Keybinding syntax**: `bindd = MODIFIERS, KEY, Description, exec, command`
-- Use `uwsm app --` prefix for GUI applications
-- Use `omarchy-launch-or-focus` to toggle existing windows
-- Use `omarchy-launch-webapp` for web apps in Chrome
-
-**Monitor configuration**: Uses EDID descriptors (`desc:Manufacturer Model Serial`) instead of port names (DP-1) for stability across restarts.
-
-**Omarchy utilities** (in `~/.local/share/omarchy/bin/`):
-- `omarchy-launch-or-focus` - Focus existing window or launch new
-- `omarchy-launch-webapp` - Open URL in dedicated Chrome window
-- `omarchy-cmd-screenshot` - Screenshot with region/window selection
-
-## Debugging
-
-```bash
-hyprctl monitors        # Debug monitor setup
-hyprctl activewindow    # Get window class for window rules
-hyprctl dispatch exec <cmd>  # Test a command
+tmux send-keys -t t C-j c
+HERDR_SESSION=scratch herdr tab list
+HERDR_SESSION=scratch herdr server stop
+herdr session delete scratch
 ```

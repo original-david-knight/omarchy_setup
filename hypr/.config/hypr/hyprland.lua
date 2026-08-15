@@ -31,6 +31,6 @@ require("default.hypr.toggles")
 -- Restore pre-Quattro application workspace routing.
 o.window("music\\.youtube\\.com", { workspace = "special:music" })
 o.window("^[sS]lack$", { workspace = "special:slack" })
-o.window("^obsidian$", { workspace = "special:slack" })
+o.window("^(obsidian|md\\.obsidian\\.Obsidian)$", { workspace = "special:slack" })
 o.window("^code$", { workspace = "1" })
 o.window("^cursor$", { workspace = "1" })

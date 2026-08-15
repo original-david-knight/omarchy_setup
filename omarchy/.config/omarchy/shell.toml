@@ -1,0 +1,9 @@
+# Keep Omarchy Shell readable on the high-resolution desktop displays.
+# Bar dimensions are specified at the default 12 px font size, so this
+# produces a 39 px top/bottom bar while preserving Quattro's bar layout.
+[font]
+base-size = 18
+
+[bar]
+scale-with-font = true
+size-horizontal = 26

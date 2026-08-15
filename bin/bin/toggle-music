@@ -4,6 +4,7 @@
 # if the app window is not already running. A normal browser tab titled
 # "YouTube Music" should not count as the app window.
 music_workspace="special:music"
+music_workspace_name="music"
 clients=$(hyprctl clients -j)
 special_visible=$(hyprctl monitors -j | jq -e --arg workspace "$music_workspace" \
   'any(.[]; .specialWorkspace.name == $workspace)' >/dev/null && echo true || echo false)
@@ -16,8 +17,17 @@ music_filter='
 
 mapfile -t music_addresses < <(jq -r ".[] | select($music_filter) | .address" <<< "$clients")
 
+toggle_special_workspace() {
+  hyprctl dispatch "hl.dsp.workspace.toggle_special(\"$music_workspace_name\")"
+}
+
+move_to_music_workspace() {
+  local address=$1
+  hyprctl dispatch "hl.dsp.window.move({ workspace = \"$music_workspace\", follow = false, window = \"address:$address\" })"
+}
+
 if ((${#music_addresses[@]} == 0)); then
-  [[ $special_visible == true ]] || hyprctl dispatch togglespecialworkspace music
+  [[ $special_visible == true ]] || toggle_special_workspace
   omarchy-launch-webapp "https://music.youtube.com"
   exit
 fi
@@ -27,11 +37,11 @@ mapfile -t misplaced_addresses < <(
 )
 
 for address in "${misplaced_addresses[@]}"; do
-  hyprctl dispatch movetoworkspacesilent "$music_workspace,address:$address"
+  move_to_music_workspace "$address"
 done
 
 if [[ $special_visible == true && ${#misplaced_addresses[@]} == 0 ]]; then
-  hyprctl dispatch togglespecialworkspace music
+  toggle_special_workspace
 elif [[ $special_visible != true ]]; then
-  hyprctl dispatch togglespecialworkspace music
+  toggle_special_workspace
 fi
