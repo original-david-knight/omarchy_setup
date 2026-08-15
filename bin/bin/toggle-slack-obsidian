@@ -1,0 +1,98 @@
+#!/bin/bash
+# Toggle Slack and Obsidian in special:slack workspace
+
+workspace="special:slack"
+workspace_name="slack"
+slack_class="^[sS]lack$"
+obsidian_class="^obsidian$"
+
+find_window() {
+    local class_regex=$1
+
+    hyprctl clients -j | jq -r --arg class_regex "$class_regex" '
+        .[]
+        | select(
+            ((.class // "") | test($class_regex)) or
+            ((.initialClass // "") | test($class_regex))
+        )
+        | .address
+    ' | head -n 1
+}
+
+window_in_workspace() {
+    local class_regex=$1
+
+    hyprctl clients -j | jq -e --arg class_regex "$class_regex" --arg workspace "$workspace" '
+        .[]
+        | select(
+            (
+                ((.class // "") | test($class_regex)) or
+                ((.initialClass // "") | test($class_regex))
+            ) and (.workspace.name == $workspace)
+        )
+    ' > /dev/null 2>&1
+}
+
+special_workspace_visible() {
+    hyprctl monitors -j | jq -e --arg workspace "$workspace" '
+        .[] | select(.specialWorkspace.name == $workspace)
+    ' > /dev/null 2>&1
+}
+
+toggle_special_workspace() {
+    hyprctl dispatch "hl.dsp.workspace.toggle_special(\"$workspace_name\")"
+}
+
+show_special_workspace() {
+    special_workspace_visible || toggle_special_workspace
+}
+
+move_window_to_special() {
+    local class_regex=$1
+    local addr
+
+    addr=$(find_window "$class_regex")
+    [[ -n "$addr" ]] || return 1
+
+    hyprctl dispatch "hl.dsp.window.move({ workspace = \"$workspace\", follow = false, window = \"address:$addr\" })" > /dev/null
+}
+
+arrange_apps() {
+    local ready=true
+
+    window_in_workspace "$slack_class" || move_window_to_special "$slack_class" || ready=false
+    window_in_workspace "$obsidian_class" || move_window_to_special "$obsidian_class" || ready=false
+
+    $ready
+}
+
+# Hiding takes precedence over app detection. This keeps the toggle responsive
+# even when one app is still starting, has closed, or changed its window class.
+if special_workspace_visible; then
+    toggle_special_workspace
+    exit 0
+fi
+
+if window_in_workspace "$slack_class" && window_in_workspace "$obsidian_class"; then
+    toggle_special_workspace
+    exit 0
+fi
+
+if ! move_window_to_special "$slack_class"; then
+    uwsm-app -- slack &
+fi
+
+if ! move_window_to_special "$obsidian_class"; then
+    uwsm-app -- obsidian &
+fi
+
+for _ in $(seq 1 20); do
+    if arrange_apps; then
+        show_special_workspace
+        exit 0
+    fi
+
+    sleep 0.5
+done
+
+show_special_workspace

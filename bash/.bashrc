@@ -5,7 +5,16 @@
 # see /usr/share/doc/bash/examples/startup-files (in the package bash-doc)
 # for examples
 
-source ~/.local/share/omarchy/default/bash/rc
+# /etc/omarchy.conf is written by omarchy-dev-link. When absent, force the
+# package default instead of preserving a stale inherited dev-link value before
+# we decide which rc file to source.
+if [[ -f /etc/omarchy.conf ]]; then
+  source /etc/omarchy.conf
+  export OMARCHY_PATH="${OMARCHY_PATH:-/usr/share/omarchy}"
+else
+  export OMARCHY_PATH=/usr/share/omarchy
+fi
+source "$OMARCHY_PATH/default/bash/rc"
 
 # Add Ruby gem bin to PATH for ruby-lsp
 export PATH="$HOME/.local/share/gem/ruby/3.4.0/bin:$PATH"
@@ -17,7 +26,7 @@ case $- in
 esac
 
 # don't put duplicate lines or lines starting with space in the history.
-# See bash(1) for more optionssource ~/.local/share/omarchy/default/bash/rc
+# See bash(1) for more options.
 HISTCONTROL=ignoreboth
 
 # append to the history file, don't overwrite it

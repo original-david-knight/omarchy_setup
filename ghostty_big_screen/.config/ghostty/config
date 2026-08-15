@@ -41,3 +41,9 @@ mouse-scroll-multiplier = 1.4
 # shell-integration-features = no-focus-reporting
 
 window-inherit-working-directory = false
+
+# Send Shift+Enter as CSI-u so TUIs can distinguish it from Enter.
+keybind = shift+enter=csi:13;2u
+
+# Legacy encoding sends Alt+Shift+Enter the same as Alt+Enter; send CSI-u so tmux can match M-S-Enter.
+keybind = alt+shift+enter=csi:13;4u
