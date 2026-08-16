@@ -3,7 +3,7 @@
 
 # Font Configuration
 font-family = CaskaydiaMono Nerd Font
-font-size = 16
+font-size = 32
 
 # Window Configuration
 gtk-titlebar = false

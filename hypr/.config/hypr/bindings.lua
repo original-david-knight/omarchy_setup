@@ -9,7 +9,7 @@ hl.unbind("SUPER + RETURN") -- Was: Quattro terminal launcher.
 o.bind(
   "SUPER + RETURN",
   "Terminal",
-  { launch = "env GDK_BACKEND=x11 ghostty --gtk-single-instance=false" }
+  { launch = "ghostty --gtk-single-instance=false" }
 )
 
 hl.unbind("SUPER + ALT + RETURN") -- Was: Quattro Work tmux session.

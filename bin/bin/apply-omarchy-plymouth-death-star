@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+branding_dir="$config_home/omarchy/branding"
+art_txt="${OMARCHY_PLYMOUTH_ART:-$branding_dir/screensaver.txt}"
+logo_png="${OMARCHY_PLYMOUTH_LOGO:-$branding_dir/death-star-plymouth.png}"
+
+background="${OMARCHY_PLYMOUTH_BACKGROUND:-#1a1b26}"
+foreground="${OMARCHY_PLYMOUTH_FOREGROUND:-#c0caf5}"
+font_spec="${OMARCHY_PLYMOUTH_ASCII_FONT:-JetBrainsMono Nerd Font}"
+point_size="${OMARCHY_PLYMOUTH_ASCII_POINT_SIZE:-11}"
+canvas_width="${OMARCHY_PLYMOUTH_CANVAS_WIDTH:-640}"
+canvas_height="${OMARCHY_PLYMOUTH_CANVAS_HEIGHT:-560}"
+
+if [[ ! -f $art_txt ]]; then
+  echo "Missing Plymouth ASCII art: $art_txt" >&2
+  exit 1
+fi
+
+for command_name in fc-match magick omarchy-plymouth-set; do
+  if ! command -v "$command_name" >/dev/null 2>&1; then
+    echo "Missing required command: $command_name" >&2
+    exit 1
+  fi
+done
+
+if ! sudo -n true 2>/dev/null; then
+  echo "Plymouth installation requires passwordless sudo." >&2
+  exit 1
+fi
+
+if [[ -f $font_spec ]]; then
+  font_path=$font_spec
+else
+  font_path=$(fc-match -f '%{file}\n' "$font_spec")
+fi
+
+if [[ ! -f $font_path ]]; then
+  echo "Unable to resolve Plymouth ASCII font: $font_spec" >&2
+  exit 1
+fi
+
+tmp_logo=$(mktemp --suffix=.png)
+trap 'rm -f "$tmp_logo"' EXIT
+
+magick \
+  -background none \
+  -fill "$foreground" \
+  -font "$font_path" \
+  -pointsize "$point_size" \
+  -interline-spacing -1 \
+  "label:@$art_txt" \
+  -trim +repage \
+  -gravity center \
+  -extent "${canvas_width}x${canvas_height}" \
+  "$tmp_logo"
+
+install -m 0644 "$tmp_logo" "$logo_png"
+omarchy-plymouth-set "$background" "$foreground" "$logo_png"
