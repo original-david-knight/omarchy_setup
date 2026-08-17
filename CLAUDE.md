@@ -39,11 +39,12 @@ The selected machine profile adds:
 `bin_laptop` contains the touchpad auto-toggle helper. Hyprland's
 `autostart.lua` launches it only when the executable is present.
 
-Quattro owns the Omarchy Shell bar layout in `~/.config/omarchy/shell.json`.
-This repository intentionally leaves that layout alone, but manages the
-shell-wide font size and horizontal bar height through
-`omarchy/.config/omarchy/shell.toml`. The 18 px base font scales the stock
-26 px bar to 39 px.
+The repository manages the Omarchy Shell bar layout through
+`omarchy/.config/omarchy/shell.json`. Its center section leaves a 440 px gap
+for the desktop monitor's top-center webcam, with the day and date to the left
+and the time and weather to the right. Shell-wide font size and horizontal bar
+height are configured in `omarchy/.config/omarchy/shell.toml`; the 18 px base
+font scales the stock 26 px bar to 39 px.
 
 `herdr` and `bin` must remain non-folded because those directories also hold
 runtime state or files owned outside this repository. The deployment script
