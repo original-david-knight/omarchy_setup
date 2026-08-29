@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/david-podcasts"
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/david-podcasts"
+socket="$runtime_dir/mpv.sock"
+pid_file="$runtime_dir/mpv.pid"
+state_file="$state_dir/player.json"
+
+mkdir -p "$runtime_dir" "$state_dir"
+chmod 700 "$runtime_dir" "$state_dir"
+
+send() {
+  local payload="$1"
+  printf '%s\n' "$payload" | socat -T 0.25 - "UNIX-CONNECT:$socket"
+}
+
+available() {
+  [[ -S $socket ]] && send '{"command":["get_property","idle-active"]}' >/dev/null 2>&1
+}
+
+ensure_player() {
+  if available; then
+    return
+  fi
+
+  if [[ -r $pid_file ]]; then
+    old_pid="$(<"$pid_file")"
+    if [[ $old_pid =~ ^[0-9]+$ ]] && kill -0 "$old_pid" 2>/dev/null; then
+      for _ in {1..20}; do
+        [[ -S $socket ]] && return
+        sleep 0.05
+      done
+    fi
+  fi
+
+  rm -f "$socket"
+  mpv \
+    --no-config \
+    --no-video \
+    --audio-display=no \
+    --idle=yes \
+    --terminal=no \
+    --force-window=no \
+    --input-media-keys=no \
+    --resume-playback=no \
+    --input-ipc-server="$socket" \
+    >/dev/null 2>&1 </dev/null &
+  printf '%s\n' "$!" >"$pid_file"
+
+  for _ in {1..40}; do
+    [[ -S $socket ]] && return
+    sleep 0.05
+  done
+
+  printf 'Podcast player did not start\n' >&2
+  exit 1
+}
+
+command="${1:-status}"
+
+case "$command" in
+  load)
+    episode_id="${2:-}"
+    url="${3:-}"
+    position="${4:-0}"
+    duration="${5:-0}"
+    title="${6:-Untitled episode}"
+    show_title="${7:-Podcast}"
+
+    [[ -n $episode_id && ( $url == http://* || $url == https://* ) ]] || {
+      printf 'A playable podcast episode is required\n' >&2
+      exit 2
+    }
+    [[ $position =~ ^[0-9]+([.][0-9]+)?$ ]] || position=0
+    [[ $duration =~ ^[0-9]+([.][0-9]+)?$ ]] || duration=0
+
+    ensure_player
+    jq -cn --arg url "$url" --arg start "$position" \
+      '{command:["loadfile",$url,"replace",-1,{start:$start}]}' | send "$(cat)" >/dev/null
+
+    tmp_state="$state_file.tmp.$$"
+    jq -cn \
+      --arg episode_id "$episode_id" \
+      --arg title "$title" \
+      --arg show_title "$show_title" \
+      --argjson duration "$duration" \
+      '{episode_id:$episode_id,title:$title,show_title:$show_title,duration:$duration}' \
+      >"$tmp_state"
+    chmod 600 "$tmp_state"
+    mv -f "$tmp_state" "$state_file"
+    ;;
+  toggle)
+    ensure_player
+    send '{"command":["cycle","pause"]}' >/dev/null
+    ;;
+  play)
+    ensure_player
+    send '{"command":["set_property","pause",false]}' >/dev/null
+    ;;
+  pause)
+    ensure_player
+    send '{"command":["set_property","pause",true]}' >/dev/null
+    ;;
+  seek)
+    amount="${2:-0}"
+    [[ $amount =~ ^-?[0-9]+([.][0-9]+)?$ ]] || exit 2
+    ensure_player
+    send "$(jq -cn --argjson amount "$amount" '{command:["seek",$amount,"relative"]}')" >/dev/null
+    ;;
+  speed)
+    speed="${2:-1}"
+    [[ $speed =~ ^[0-9]+([.][0-9]+)?$ ]] || exit 2
+    ensure_player
+    send "$(jq -cn --argjson speed "$speed" '{command:["set_property","speed",$speed]}')" >/dev/null
+    ;;
+  stop)
+    ensure_player
+    send '{"command":["stop"]}' >/dev/null
+    ;;
+  save)
+    episode_id="${2:-}"
+    position="${3:-0}"
+    duration="${4:-0}"
+    completed="${5:-false}"
+    [[ $episode_id ]] || exit 2
+    [[ $position =~ ^[0-9]+([.][0-9]+)?$ ]] || position=0
+    [[ $duration =~ ^[0-9]+([.][0-9]+)?$ ]] || duration=0
+    [[ $completed == true ]] || completed=false
+
+    config="${EVERYTHING_AGENT_CONFIG_DIR:-$HOME/.config/everything-agent}/config.json"
+    service_url="$(jq -er '.service_url | rtrimstr("/")' "$config")"
+    token="$(jq -er .token "$config")"
+    encoded_id="$(jq -rn --arg value "$episode_id" '$value | @uri')"
+    body="$(jq -cn \
+      --argjson position "$position" \
+      --argjson duration "$duration" \
+      --argjson completed "$completed" \
+      --arg played_at "$(date --iso-8601=seconds)" \
+      '{position_seconds:($position|round),duration_seconds:($duration|round),completed:$completed,played_at:$played_at}')"
+    curl -fsS --max-time 20 \
+      --request PUT \
+      -H "Authorization: Bearer $token" \
+      -H 'Content-Type: application/json' \
+      --data "$body" \
+      "$service_url/api/podcasts/progress/$encoded_id" >/dev/null
+    ;;
+  status)
+    if ! available; then
+      jq -cn --slurpfile state <(if [[ -r $state_file ]]; then cat "$state_file"; else printf '{}\n'; fi) \
+        '{available:false,idle:true,paused:true,position:0,duration:0,speed:1} + ($state[0] // {})'
+      exit
+    fi
+
+    responses="$(printf '%s\n' \
+      '{"command":["get_property","time-pos"],"request_id":1}' \
+      '{"command":["get_property","duration"],"request_id":2}' \
+      '{"command":["get_property","pause"],"request_id":3}' \
+      '{"command":["get_property","idle-active"],"request_id":4}' \
+      '{"command":["get_property","speed"],"request_id":5}' \
+      | socat -T 0.25 - "UNIX-CONNECT:$socket" || true)"
+    jq -cs --slurpfile state <(if [[ -r $state_file ]]; then cat "$state_file"; else printf '{}\n'; fi) '
+      reduce .[] as $response
+        ({available:true,idle:true,paused:true,position:0,duration:0,speed:1};
+          if $response.request_id == 1 then .position = ($response.data // 0)
+          elif $response.request_id == 2 then .duration = ($response.data // 0)
+          elif $response.request_id == 3 then .paused = ($response.data // true)
+          elif $response.request_id == 4 then .idle = ($response.data // true)
+          elif $response.request_id == 5 then .speed = ($response.data // 1)
+          else . end)
+      + ($state[0] // {})
+    ' <<<"$responses"
+    ;;
+  *)
+    printf 'usage: player <load|toggle|play|pause|seek|speed|stop|save|status> ...\n' >&2
+    exit 2
+    ;;
+esac
