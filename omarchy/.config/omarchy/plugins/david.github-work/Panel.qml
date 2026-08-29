@@ -86,10 +86,12 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: "PR " + root.mine.length + "↗" + root.review.length
+    text: "PR"
     fontFamily: "Z003"
     tooltipText: "GitHub · " + root.mine.length + " open · " + root.review.length + " to review\nLeft: queues · Right: GitHub"
     active: root.errorText !== ""
+    // Pull requests waiting on the owner turn the label gold; an error still wins.
+    foreground: root.review.length > 0 ? "#e3c46a" : root.foreground
     fontSize: Style.font.body
     horizontalMargin: 7
 

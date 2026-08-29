@@ -85,10 +85,11 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: "JR " + root.issues.length
+    text: "JR"
+    fontFamily: "Z003"
     tooltipText: "Jira · " + root.issues.length + " assigned\nLeft: tickets · Right: Jira"
     active: root.errorText !== ""
-    fontSize: Style.font.bodySmall
+    fontSize: Style.font.body
     horizontalMargin: 7
 
     onPressed: function(buttonCode) {
