@@ -50,15 +50,13 @@ spacer and anchors the clock at the center. Shell-wide font size and horizontal
 bar height are configured in `omarchy/.config/omarchy/shell.toml`; the 18 px base
 font scales the stock 26 px bar to 39 px.
 
-The `everything-app` custom bar widget lives at
-`omarchy/.config/omarchy/bar/modules/everything-app.qml`. Its left-click popup
-shows the next calendar event, today's steps, recent Jira issues, the two latest
-owned work PRs, and every PR awaiting review. The companion
-`omarchy/.config/omarchy/bar/scripts/everything-summary` reads those cached feeds
-through the existing desktop bearer. Jira and GitHub rows launch through
-`everything-open-work`, which resolves the Chrome profile signed into the work
-account and never falls back to the personal default. Right-click opens
-Everything directly.
+The Everything entry in both layouts is `david.everything`, the bar plugin
+that everything-app's `scripts/install-everything-agent.sh` installs into
+`~/.config/omarchy/plugins/david.everything/`; it is not part of this repo.
+The `everything-app` QML module under `omarchy/.config/omarchy/bar/modules/`
+(with `bar/scripts/everything-summary` and `everything-open-work`) was the
+alternative and is kept but not placed in any layout — the plugin won the
+side-by-side comparison on 2026-08-29.
 
 `herdr` and `bin` must remain non-folded because those directories also hold
 runtime state or files owned outside this repository. The deployment script

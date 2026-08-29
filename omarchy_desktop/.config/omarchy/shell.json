@@ -21,7 +21,7 @@
           "format": "HH:mm",
           "formatAlt": "d MMMM 'W'ww yyyy",
           "id": "omarchy.clock",
-          "verticalFormat": "HH\n—\nmm"
+          "verticalFormat": "HH\n\u2014\nmm"
         },
         {
           "id": "omarchy.keyboard-layout"
@@ -76,8 +76,7 @@
           "id": "david.podcasts"
         },
         {
-          "id": "everything-app",
-          "type": "qml"
+          "id": "david.everything"
         },
         {
           "id": "omarchy.power"
