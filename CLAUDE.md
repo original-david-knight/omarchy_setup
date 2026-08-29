@@ -53,10 +53,6 @@ font scales the stock 26 px bar to 39 px.
 The Everything entry in both layouts is `david.everything`, the bar plugin
 that everything-app's `scripts/install-everything-agent.sh` installs into
 `~/.config/omarchy/plugins/david.everything/`; it is not part of this repo.
-The `everything-app` QML module under `omarchy/.config/omarchy/bar/modules/`
-(with `bar/scripts/everything-summary` and `everything-open-work`) was the
-alternative and is kept but not placed in any layout — the plugin won the
-side-by-side comparison on 2026-08-29.
 
 `herdr` and `bin` must remain non-folded because those directories also hold
 runtime state or files owned outside this repository. The deployment script
