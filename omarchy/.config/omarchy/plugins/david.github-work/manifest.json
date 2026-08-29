@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "david.github-work",
+  "name": "Work pull requests",
+  "version": "1.0.0",
+  "author": "David Knight",
+  "description": "Open Fluxon pull requests and review requests.",
+  "kinds": ["bar-widget"],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Work pull requests",
+    "description": "Your open work PRs and PRs awaiting your review.",
+    "category": "Productivity",
+    "aliases": ["github", "pull requests", "reviews"],
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

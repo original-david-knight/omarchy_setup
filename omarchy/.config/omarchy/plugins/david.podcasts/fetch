@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+config="${EVERYTHING_AGENT_CONFIG_DIR:-$HOME/.config/everything-agent}/config.json"
+service_url="$(jq -er '.service_url | rtrimstr("/")' "$config")"
+token="$(jq -er .token "$config")"
+
+curl -fsS --max-time 20 \
+  -H "Authorization: Bearer $token" \
+  "$service_url/api/podcasts/queue" \
+| jq -c '{
+    meta: (.meta // ""),
+    entries: [(.entries // [])[] | {
+      episode_id: (.episode_id // ""),
+      title: (.title // ""),
+      show_title: (.show_title // ""),
+      enclosure_url: (.enclosure_url // ""),
+      duration_seconds: (.duration_seconds // 0),
+      position_seconds: (.position_seconds // 0),
+      completed: (.completed // false)
+    }]
+  }'

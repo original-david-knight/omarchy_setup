@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+config="${EVERYTHING_AGENT_CONFIG_DIR:-$HOME/.config/everything-agent}/config.json"
+service_url="$(jq -er '.service_url | rtrimstr("/")' "$config")"
+token="$(jq -er .token "$config")"
+
+curl -fsS --max-time 20 \
+  -H "Authorization: Bearer $token" \
+  "$service_url/api/jira" \
+| jq -c '{
+    connected: (.connected // false),
+    meta: (.meta // ""),
+    last_sync: (.last_sync // ""),
+    last_error: (.last_error // ""),
+    issues: [(.issues // [])[] | {
+      key: (.key // ""), title: (.summary // ""), url: (.url // ""),
+      line: (.line // ""), category: (.category // "")
+    }]
+  }'

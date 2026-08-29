@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "david.jira-work",
+  "name": "Assigned Jira tickets",
+  "version": "1.0.0",
+  "author": "David Knight",
+  "description": "Unresolved Jira tickets assigned to David.",
+  "kinds": ["bar-widget"],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Assigned Jira tickets",
+    "description": "Your unresolved work Jira queue.",
+    "category": "Productivity",
+    "aliases": ["jira", "issues", "tickets"],
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

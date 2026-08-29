@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+config="${WORK_WIDGETS_CONFIG:-$HOME/.config/omarchy/work-widgets.env}"
+
+if [[ ! -r $config ]]; then
+  printf 'Work widget config is missing: %s\n' "$config" >&2
+  exit 1
+fi
+
+config_mode="$(stat -c '%a' -- "$config")"
+if (( (8#$config_mode & 077) != 0 )); then
+  printf 'Work widget config must not be group- or world-readable: %s\n' "$config" >&2
+  exit 1
+fi
+
+# This file is deliberately outside the stowed repository. It owns the local
+# Chrome profile and work-service origins without putting identity details in
+# source control.
+# shellcheck disable=SC1090
+source "$config"
+
+: "${WORK_CHROME_PROFILE:?WORK_CHROME_PROFILE is required}"
+: "${WORK_GITHUB_ORIGIN:?WORK_GITHUB_ORIGIN is required}"
+: "${WORK_JIRA_ORIGIN:?WORK_JIRA_ORIGIN is required}"
+
+destination="${1:-}"
+case "$destination" in
+  github)
+    url="${WORK_GITHUB_DASHBOARD_URL:-${WORK_GITHUB_ORIGIN%/}/pulls}"
+    ;;
+  jira)
+    url="${WORK_JIRA_DASHBOARD_URL:-${WORK_JIRA_ORIGIN%/}/jira/your-work}"
+    ;;
+  *)
+    url="$destination"
+    ;;
+esac
+
+# This launcher is intentionally narrow: shell widgets may only send the two
+# work origins through the Fluxon Chrome profile.
+github_origin="${WORK_GITHUB_ORIGIN%/}"
+jira_origin="${WORK_JIRA_ORIGIN%/}"
+if [[ $url != "$github_origin" && $url != "$github_origin"/* &&
+      $url != "$jira_origin" && $url != "$jira_origin"/* ]]; then
+  printf 'Refusing URL outside configured work origins: %s\n' "$url" >&2
+  exit 2
+fi
+
+google-chrome-stable --profile-directory="$WORK_CHROME_PROFILE" --new-tab "$url" \
+  >/dev/null 2>&1 &

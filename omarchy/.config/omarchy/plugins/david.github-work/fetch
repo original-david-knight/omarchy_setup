@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+config="${EVERYTHING_AGENT_CONFIG_DIR:-$HOME/.config/everything-agent}/config.json"
+service_url="$(jq -er '.service_url | rtrimstr("/")' "$config")"
+token="$(jq -er .token "$config")"
+
+curl -fsS --max-time 20 \
+  -H "Authorization: Bearer $token" \
+  "$service_url/api/github" \
+| jq -c '{
+    connected: (.connected // false),
+    meta: (.meta // ""),
+    last_sync: (.last_sync // ""),
+    last_error: (.last_error // ""),
+    mine: [(.mine // [])[] | {
+      key: (.key // ""), title: (.title // ""), url: (.url // ""),
+      line: (.line // ""), draft: (.draft // false)
+    }],
+    review: [(.review // [])[] | {
+      key: (.key // ""), title: (.title // ""), url: (.url // ""),
+      line: (.line // ""), draft: (.draft // false)
+    }]
+  }'
