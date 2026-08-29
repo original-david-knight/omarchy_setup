@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+
+set -uo pipefail
+
+umask 077
+
+config_file=${EVERYTHING_AGENT_CONFIG:-"${HOME}/.config/everything-agent/config.json"}
+refresh_requested=false
+
+fail() {
+  jq -cn --arg error "$1" '{error: $error, calendar: {connected: false, events: []}, steps: {connected: false, value: null, goal: null}, jira: [], mine: [], review: []}'
+  exit 0
+}
+
+case ${1:-} in
+  --refresh) refresh_requested=true ;;
+  "") ;;
+  *) fail "Unknown Everything summary option: $1" ;;
+esac
+
+command -v curl >/dev/null 2>&1 || fail "curl is unavailable"
+command -v jq >/dev/null 2>&1 || fail "jq is unavailable"
+[[ -r $config_file ]] || fail "Everything agent is not configured"
+
+service_url=$(jq -er '.service_url | strings | select(length > 0)' "$config_file" 2>/dev/null) || fail "Everything service is not configured"
+agent_token=$(jq -er '.token | strings | select(length > 0)' "$config_file" 2>/dev/null) || fail "Everything agent needs to log in"
+device_id=$(jq -er '.device | strings | select(length > 0)' "$config_file" 2>/dev/null) || fail "Everything device is not configured"
+
+request_dir=$(mktemp -d "${XDG_RUNTIME_DIR:-/tmp}/everything-summary.XXXXXX") || fail "Could not create a request workspace"
+trap 'rm -rf -- "$request_dir"' EXIT
+
+fetch() {
+  local endpoint=$1 output=$2
+  if ! curl -fsS --connect-timeout 4 --max-time 15 \
+    "$service_url/api/$endpoint" \
+    -H "Authorization: Bearer $agent_token" \
+    -H "X-Everything-Device: $device_id" \
+    -o "$output"; then
+    jq -cn --arg endpoint "$endpoint" '{_fetch_error: ($endpoint + " is unavailable")}' >"$output"
+  fi
+}
+
+refresh_vitals() {
+  local output=$1
+  if ! curl -fsS --connect-timeout 4 --max-time 35 \
+    -X POST \
+    "$service_url/api/vitals/refresh" \
+    -H "Authorization: Bearer $agent_token" \
+    -H "X-Everything-Device: $device_id" \
+    -o "$output"; then
+    jq -cn '{_fetch_error: "Vitals refresh failed"}' >"$output"
+  fi
+}
+
+fetch today "$request_dir/today.json" &
+today_pid=$!
+if $refresh_requested; then
+  refresh_vitals "$request_dir/vitals.json" &
+else
+  fetch vitals "$request_dir/vitals.json" &
+fi
+vitals_pid=$!
+fetch jira "$request_dir/jira.json" &
+jira_pid=$!
+fetch github "$request_dir/github.json" &
+github_pid=$!
+
+wait "$today_pid" "$vitals_pid" "$jira_pid" "$github_pid" || true
+
+jq -cn \
+  --slurpfile today "$request_dir/today.json" \
+  --slurpfile vitals "$request_dir/vitals.json" \
+  --slurpfile jira "$request_dir/jira.json" \
+  --slurpfile github "$request_dir/github.json" '
+    ($today[0] // {}) as $t |
+    ($vitals[0] // {}) as $v |
+    ($jira[0] // {}) as $j |
+    ($github[0] // {}) as $g |
+    (($v.steps.readings // []) | map(select(.day == $v.to)) | last) as $today_steps |
+    {
+      error: ([$t._fetch_error, $v._fetch_error, $j._fetch_error, $g._fetch_error,
+               $t.last_error, $v.last_error, $j.last_error, $g.last_error]
+              | map(select(type == "string" and length > 0)) | join(" · ")),
+      generated_at: (now | todateiso8601),
+      calendar: {
+        connected: ($t.connected // false),
+        date: ($t.date // ""),
+        events: (($t.events // []) | map(select(.declined != true and .all_day != true))),
+        last_sync: ($t.last_sync // "")
+      },
+      steps: {
+        connected: ($v.steps_connected // false),
+        value: ($today_steps.high // null),
+        goal: ($v.steps.goal // null),
+        last_sync: ($v.last_sync // "")
+      },
+      jira: (($j.issues // [])[0:3]),
+      mine: (($g.mine // [])[0:2]),
+      review: ($g.review // []),
+      jira_connected: ($j.connected // false),
+      github_connected: ($g.connected // false)
+    }
+  '

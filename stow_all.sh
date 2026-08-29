@@ -175,6 +175,8 @@ configure_yazi() {
 unstow_package ghostty
 unstow_package ghostty_big_screen
 unstow_package bin_laptop
+unstow_package omarchy_desktop
+unstow_package omarchy_laptop
 
 shared_packages=(bash tmux zellij herdr omarchy hypr starship ssh bin vscode yazi)
 for package in "${shared_packages[@]}"; do
@@ -183,9 +185,11 @@ done
 
 if [[ $profile == desktop ]]; then
   stow_package ghostty_big_screen
+  stow_package omarchy_desktop
 else
   stow_package ghostty
   stow_package bin_laptop
+  stow_package omarchy_laptop
 fi
 
 configure_yazi
