@@ -86,10 +86,11 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: root.mine.length + "↗" + root.review.length
+    text: "PR " + root.mine.length + "↗" + root.review.length
+    fontFamily: "Z003"
     tooltipText: "GitHub · " + root.mine.length + " open · " + root.review.length + " to review\nLeft: queues · Right: GitHub"
     active: root.errorText !== ""
-    fontSize: Style.font.bodySmall
+    fontSize: Style.font.body
     horizontalMargin: 7
 
     onPressed: function(buttonCode) {
