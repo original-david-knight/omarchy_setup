@@ -98,3 +98,26 @@ HERDR_SESSION=scratch herdr tab list
 HERDR_SESSION=scratch herdr server stop
 herdr session delete scratch
 ```
+
+## New machine
+
+The public repo comes first because a fresh machine has no credentials:
+
+1. `git clone https://github.com/original-david-knight/omarchy_setup ~/omarchy_setup && cd ~/omarchy_setup && ./go.sh`
+   installs the packages, generates `~/.ssh/id_github` and prints its public
+   key, and stows the dotfiles.
+2. Add the printed key to GitHub.
+3. `./after_github_key_configured.sh` switches this checkout to its SSH
+   remote and clones the private repos, including
+   `~/workspace/omarchy-setup-private`.
+4. `cd ~/workspace/omarchy-setup-private && ./go.sh` — the private half:
+   secrets, SSH keys, Postgres, and `setup_everything_app.sh`, which leaves
+   Everything App built, authenticated against the hosted service, and
+   running (companion, bar widgets, pm watchers, morning launcher).
+
+What this repo already carries for Everything App: `autostart.lua` launches
+`~/.local/bin/lifedash-open` when it exists, the stowed `shell.json` places
+the Everything bar widget, and that widget and the `david.jira-work`,
+`david.github-work` and `david.podcasts` plugins all read the companion's
+`~/.config/everything-agent/config.json`. None of it works until the private
+step has minted that config.
