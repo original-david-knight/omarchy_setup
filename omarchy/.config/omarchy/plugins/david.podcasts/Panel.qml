@@ -250,7 +250,7 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: (root.playing ? "▶ " : "P ") + root.entries.length
+    text: (root.playing ? "▶ " : "🎧 ") + root.entries.length
     tooltipText: "Podcasts · " + root.entries.length + " queued" +
       (root.currentEntry ? "\n" + (root.playing ? "Playing: " : "Paused: ") + root.currentEntry.title : "")
     active: root.errorText !== ""

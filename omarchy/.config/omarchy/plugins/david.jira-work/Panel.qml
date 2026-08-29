@@ -85,7 +85,7 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: "J " + root.issues.length
+    text: "JR " + root.issues.length
     tooltipText: "Jira · " + root.issues.length + " assigned\nLeft: tickets · Right: Jira"
     active: root.errorText !== ""
     fontSize: Style.font.bodySmall
