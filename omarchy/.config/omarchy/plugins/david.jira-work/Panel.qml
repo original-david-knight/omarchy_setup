@@ -86,7 +86,7 @@ Panel {
     anchors.fill: parent
     bar: root.bar
     text: "JR"
-    fontFamily: "Z003"
+    fontFamily: "URW Gothic"
     tooltipText: "Jira · " + root.issues.length + " assigned\nLeft: tickets · Right: Jira"
     active: root.errorText !== ""
     fontSize: Style.font.body
