@@ -1,6 +1,6 @@
 {
   "bar": {
-    "centerAnchor": "omarchy.spacer",
+    "centerAnchor": "omarchy.clock",
     "layout": {
       "center": [
         {
@@ -12,10 +12,6 @@
           "interval": 60,
           "tooltip": "Full date",
           "type": "command"
-        },
-        {
-          "id": "omarchy.spacer",
-          "size": 440
         },
         {
           "format": "HH:mm",
@@ -76,7 +72,8 @@
           "id": "david.podcasts"
         },
         {
-          "id": "david.everything"
+          "id": "everything-app",
+          "type": "qml"
         },
         {
           "id": "omarchy.power"
@@ -87,8 +84,8 @@
     "transparent": false
   },
   "idle": {
-    "lock": 300,
-    "screensaver": 150
+    "lock": 600,
+    "screensaver": 600
   },
   "plugins": [],
   "version": 1
