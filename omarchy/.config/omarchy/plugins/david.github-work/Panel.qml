@@ -18,6 +18,9 @@ Panel {
   readonly property var mine: githubData && Array.isArray(githubData.mine) ? githubData.mine : []
   readonly property var review: githubData && Array.isArray(githubData.review) ? githubData.review : []
   readonly property color foreground: bar ? bar.foreground : Color.foreground
+  // Everything about pull requests waiting on the owner is gold.
+  readonly property color gold: "#e3c46a"
+  readonly property color goldDim: Qt.darker(gold, 1.35)
   readonly property color dim: Color.muted
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property string opener: Quickshell.env("HOME") + "/bin/open-work-url"
@@ -91,7 +94,7 @@ Panel {
     tooltipText: "GitHub · " + root.mine.length + " open · " + root.review.length + " to review\nLeft: queues · Right: GitHub"
     active: root.errorText !== ""
     // Pull requests waiting on the owner turn the label gold; an error still wins.
-    foreground: root.review.length > 0 ? "#e3c46a" : root.foreground
+    foreground: root.review.length > 0 ? root.gold : root.foreground
     fontSize: Style.font.body
     horizontalMargin: 7
 
@@ -253,16 +256,16 @@ Panel {
             id: reviewSection
             width: parent.width
             spacing: Style.space(5)
-            PanelSeparator { width: parent.width; foreground: root.foreground }
+            PanelSeparator { width: parent.width; foreground: root.gold }
             PanelSectionHeader {
               text: "AWAITING MY REVIEW  ·  " + root.review.length
-              foreground: root.foreground
+              foreground: root.gold
               fontFamily: root.fontFamily
             }
             Text {
               visible: root.review.length === 0 && !root.loading
               text: "No pull requests awaiting review."
-              color: root.dim
+              color: root.goldDim
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
             }
@@ -275,7 +278,7 @@ Panel {
                 Rectangle {
                   anchors.fill: parent
                   radius: Style.cornerRadius
-                  color: reviewMouse.containsMouse ? Style.hoverFillFor(root.foreground, Color.accent) : "transparent"
+                  color: reviewMouse.containsMouse ? Style.hoverFillFor(root.gold, Color.accent) : "transparent"
                 }
                 Column {
                   id: reviewCopy
@@ -286,7 +289,7 @@ Panel {
                   Text {
                     width: parent.width
                     text: modelData.key + "  ·  " + modelData.title
-                    color: root.foreground
+                    color: root.gold
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.bodySmall
                     wrapMode: Text.WordWrap
@@ -294,7 +297,7 @@ Panel {
                   Text {
                     width: parent.width
                     text: modelData.line
-                    color: root.dim
+                    color: root.goldDim
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
                     elide: Text.ElideRight
