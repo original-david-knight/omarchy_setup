@@ -6,6 +6,9 @@ deploys each top-level package into the user's home directory.
 ## Commands
 
 ```bash
+# Run the complete setup (install, deploy, and activate).
+./go.sh
+
 # Install applications and supporting packages.
 ./install_all.sh
 
@@ -29,7 +32,7 @@ Conflicting files are moved to
 ## Stow packages
 
 Shared packages are `bash`, `tmux`, `zellij`, `herdr`, `omarchy`, `hypr`,
-`starship`, `ssh`, `bin`, and `vscode`.
+`starship`, `ssh`, `bin`, `vscode`, and `yazi`.
 
 The selected machine profile adds:
 
@@ -50,6 +53,13 @@ font scales the stock 26 px bar to 39 px.
 runtime state or files owned outside this repository. The deployment script
 uses non-folding consistently for every package so profile changes and future
 Omarchy-generated files do not write into the repository.
+
+Yazi is the default directory handler and Chrome file picker. Its portal
+configuration is in `yazi/`. `install_yazi.sh` installs Yazi and the portal
+backend; after deployment, `stow_all.sh` sets the directory MIME default,
+installs the Omarchy `theme-set` hook, generates the initial theme, reloads
+Hyprland, and restarts the portal. The hook regenerates
+`~/.config/yazi/theme.toml` from the active Omarchy theme's `colors.toml`.
 
 ## Hyprland on Quattro
 

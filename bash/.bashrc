@@ -201,3 +201,10 @@ claude() {
     printf '\e[?1004l'
 }
 WAYLAND_DISPLAY=wayland-1
+
+# Load environment variables from ~/.env when it exists.
+if [ -f "$HOME/.env" ]; then
+  set -a
+  . "$HOME/.env"
+  set +a
+fi

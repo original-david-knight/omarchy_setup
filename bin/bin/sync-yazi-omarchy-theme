@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+config_home=${XDG_CONFIG_HOME:-"$HOME/.config"}
+colors_file="$HOME/.local/state/omarchy/current/theme/colors.toml"
+yazi_config_dir="$config_home/yazi"
+theme_file="$yazi_config_dir/theme.toml"
+
+if [[ ! -r $colors_file ]]; then
+  echo "Cannot read the active Omarchy colors: $colors_file" >&2
+  exit 1
+fi
+
+color() {
+  local key=$1 fallback=$2 value
+
+  value=$(sed -nE "s/^${key}[[:space:]]*=[[:space:]]*\"([^\"]+)\".*$/\\1/p" "$colors_file" | head -n 1)
+  printf '%s' "${value:-$fallback}"
+}
+
+background=$(color background '#1a1b26')
+foreground=$(color foreground '#a9b1d6')
+muted=$(color muted '#414868')
+selection=$(color selection '#292e42')
+accent=$(color accent '#7aa2f7')
+red=$(color red '#f7768e')
+yellow=$(color yellow '#e0af68')
+green=$(color green '#9ece6a')
+cyan=$(color cyan '#449dab')
+magenta=$(color magenta '#ad8ee6')
+
+mkdir -p "$yazi_config_dir"
+theme_tmp=$(mktemp "$yazi_config_dir/.theme.toml.XXXXXX")
+trap 'rm -f -- "$theme_tmp"' EXIT
+
+{
+  printf '%s\n' '#:schema https://yazi-rs.github.io/schemas/theme.json'
+  printf '%s\n' '# Generated from the active Omarchy theme. Local edits will be replaced.'
+  printf '\n[app]\n'
+  printf 'overall = { bg = "%s" }\n' "$background"
+  printf '\n[mgr]\n'
+  printf 'cwd             = { fg = "%s", bold = true }\n' "$accent"
+  printf 'find_keyword    = { fg = "%s", bold = true, italic = true, underline = true }\n' "$yellow"
+  printf 'find_position   = { fg = "%s", bg = "%s", bold = true }\n' "$magenta" "$selection"
+  printf 'symlink_target  = { fg = "%s", italic = true }\n' "$cyan"
+  printf 'marker_copied   = { fg = "%s", bg = "%s" }\n' "$green" "$green"
+  printf 'marker_cut      = { fg = "%s", bg = "%s" }\n' "$red" "$red"
+  printf 'marker_marked   = { fg = "%s", bg = "%s" }\n' "$cyan" "$cyan"
+  printf 'marker_selected = { fg = "%s", bg = "%s" }\n' "$yellow" "$yellow"
+  printf 'count_copied    = { fg = "%s", bg = "%s", bold = true }\n' "$background" "$green"
+  printf 'count_cut       = { fg = "%s", bg = "%s", bold = true }\n' "$background" "$red"
+  printf 'count_selected  = { fg = "%s", bg = "%s", bold = true }\n' "$background" "$yellow"
+  printf 'border_style    = { fg = "%s" }\n' "$muted"
+  printf '\n[tabs]\n'
+  printf 'active   = { fg = "%s", bg = "%s", bold = true }\n' "$background" "$accent"
+  printf 'inactive = { fg = "%s", bg = "%s" }\n' "$foreground" "$selection"
+  printf '\n[mode]\n'
+  printf 'normal_main = { fg = "%s", bg = "%s", bold = true }\n' "$background" "$accent"
+  printf 'normal_alt  = { fg = "%s", bg = "%s" }\n' "$accent" "$selection"
+  printf 'select_main = { fg = "%s", bg = "%s", bold = true }\n' "$background" "$magenta"
+  printf 'select_alt  = { fg = "%s", bg = "%s" }\n' "$magenta" "$selection"
+  printf 'unset_main  = { fg = "%s", bg = "%s", bold = true }\n' "$background" "$red"
+  printf 'unset_alt   = { fg = "%s", bg = "%s" }\n' "$red" "$selection"
+  printf '\n[indicator]\n'
+  printf 'parent  = { fg = "%s", bg = "%s", bold = true }\n' "$background" "$muted"
+  printf 'current = { fg = "%s", bg = "%s", bold = true }\n' "$background" "$accent"
+  printf 'preview = { fg = "%s", underline = true }\n' "$accent"
+  printf '\n[status]\n'
+  printf 'perm_sep        = { fg = "%s" }\n' "$muted"
+  printf 'perm_type       = { fg = "%s" }\n' "$green"
+  printf 'perm_read       = { fg = "%s" }\n' "$yellow"
+  printf 'perm_write      = { fg = "%s" }\n' "$red"
+  printf 'perm_exec       = { fg = "%s" }\n' "$cyan"
+  printf 'progress_label  = { fg = "%s", bold = true }\n' "$foreground"
+  printf 'progress_normal = { fg = "%s", bg = "%s" }\n' "$green" "$selection"
+  printf 'progress_error  = { fg = "%s", bg = "%s" }\n' "$yellow" "$red"
+  printf '\n[which]\n'
+  printf 'border          = { fg = "%s" }\n' "$accent"
+  printf 'cand            = { fg = "%s" }\n' "$cyan"
+  printf 'rest            = { fg = "%s" }\n' "$muted"
+  printf 'desc            = { fg = "%s" }\n' "$magenta"
+  printf 'separator_style = { fg = "%s" }\n' "$muted"
+  printf '\n[confirm]\n'
+  printf 'border  = { fg = "%s" }\n' "$accent"
+  printf 'title   = { fg = "%s", bold = true }\n' "$accent"
+  printf 'btn_yes = { fg = "%s", bg = "%s", bold = true }\n' "$background" "$green"
+  printf 'btn_no  = { fg = "%s", bg = "%s" }\n' "$foreground" "$selection"
+  printf '\n[spot]\n'
+  printf 'border   = { fg = "%s" }\n' "$accent"
+  printf 'title    = { fg = "%s", bold = true }\n' "$accent"
+  printf 'tbl_col  = { fg = "%s" }\n' "$cyan"
+  printf 'tbl_cell = { fg = "%s", bg = "%s" }\n' "$yellow" "$selection"
+  printf '\n[notify]\n'
+  printf 'title_info  = { fg = "%s" }\n' "$green"
+  printf 'title_warn  = { fg = "%s" }\n' "$yellow"
+  printf 'title_error = { fg = "%s" }\n' "$red"
+  printf '\n[pick]\n'
+  printf 'border = { fg = "%s" }\n' "$accent"
+  printf 'active = { fg = "%s", bold = true }\n' "$magenta"
+  printf '\n[input]\n'
+  printf 'border   = { fg = "%s" }\n' "$accent"
+  printf 'title    = { fg = "%s" }\n' "$accent"
+  printf 'value    = { fg = "%s" }\n' "$foreground"
+  printf 'selected = { fg = "%s", bg = "%s" }\n' "$background" "$accent"
+  printf '\n[cmp]\n'
+  printf 'border   = { fg = "%s" }\n' "$accent"
+  printf 'active   = { fg = "%s", bg = "%s", bold = true }\n' "$background" "$accent"
+  printf 'inactive = { fg = "%s" }\n' "$foreground"
+  printf '\n[tasks]\n'
+  printf 'border  = { fg = "%s" }\n' "$accent"
+  printf 'title   = { fg = "%s" }\n' "$accent"
+  printf 'hovered = { fg = "%s", bg = "%s", bold = true }\n' "$background" "$accent"
+  printf '\n[help]\n'
+  printf 'border  = { fg = "%s" }\n' "$accent"
+  printf 'chord   = { fg = "%s" }\n' "$cyan"
+  printf 'action  = { fg = "%s" }\n' "$foreground"
+  printf 'hovered = { fg = "%s", bg = "%s", bold = true }\n' "$background" "$accent"
+} >"$theme_tmp"
+
+mv -- "$theme_tmp" "$theme_file"
+trap - EXIT
