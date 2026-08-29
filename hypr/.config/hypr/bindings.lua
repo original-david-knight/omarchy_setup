@@ -21,6 +21,11 @@ o.bind(
 
 o.bind("SUPER + PERIOD", "Mouse Keys", "mousekeys show")
 o.bind(
+  "SUPER + E",
+  "Yazi file manager",
+  { launch = "ghostty --gtk-single-instance=false --class=org.omarchy.yazi -e yazi" }
+)
+o.bind(
   "SUPER + B",
   "Browser",
   { launch = 'google-chrome-stable --profile-directory="Default" --new-window' }
@@ -78,6 +83,13 @@ o.bind(
   "SUPER + SHIFT + F",
   "Full screen",
   hl.dsp.window.fullscreen({ mode = "fullscreen" })
+)
+
+hl.unbind("SUPER + ALT + SHIFT + F") -- Was: Quattro file manager in the active terminal's cwd.
+o.bind(
+  "SUPER + ALT + SHIFT + F",
+  "Yazi file manager (cwd)",
+  { launch = 'ghostty --gtk-single-instance=false --class=org.omarchy.yazi -e yazi "$(omarchy-cmd-terminal-cwd)"' }
 )
 
 -- Emergency mode: CTRL + ALT + DELETE, then R/S/L. Escape or any other key

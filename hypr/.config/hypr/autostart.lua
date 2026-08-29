@@ -10,3 +10,9 @@ end
 
 launch_if_present(home .. "/bin/auto-touchpad-toggle")
 launch_if_present(home .. "/.local/bin/lifedash-open")
+
+-- Recover the center OLED when its high-bandwidth DP link stalls during boot.
+local center_monitor_relink = home .. "/bin/relink-center-monitor"
+if o.cmd_present(center_monitor_relink) then
+  o.launch_on_start(o.shell_quote(center_monitor_relink) .. " --startup")
+end

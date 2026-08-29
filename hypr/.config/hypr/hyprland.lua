@@ -38,3 +38,10 @@ o.window("^[sS]lack$", { workspace = "special:slack" })
 o.window("^(obsidian|md\\.obsidian\\.Obsidian)$", { workspace = "special:slack" })
 o.window("^code$", { workspace = "1" })
 o.window("^cursor$", { workspace = "1" })
+
+-- Browser file pickers use a dedicated, roomy Yazi terminal that behaves like a dialog.
+o.window("^org\\.omarchy\\.yazi-picker$", {
+  float = true,
+  center = true,
+  size = { 1600, 1000 },
+})

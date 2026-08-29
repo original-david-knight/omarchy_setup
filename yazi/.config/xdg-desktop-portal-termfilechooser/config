@@ -1,0 +1,7 @@
+[filechooser]
+cmd=yazi-wrapper.sh
+create_help_file=1
+default_dir=$HOME
+env=TERMCMD=ghostty --gtk-single-instance=false --class=org.omarchy.yazi-picker --title=Yazi-File-Picker --font-size=18 -e
+open_mode=suggested
+save_mode=suggested

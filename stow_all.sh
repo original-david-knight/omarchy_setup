@@ -117,13 +117,66 @@ stow_package() {
   stow --restow --no-folding --dir="$repo_dir" --target="$target_home" "$package"
 }
 
+configure_yazi() {
+  local target_config_home="$target_home/.config"
+  local sync_script="$target_home/bin/sync-yazi-omarchy-theme"
+  local colors_file="$target_home/.local/state/omarchy/current/theme/colors.toml"
+
+  command -v yazi >/dev/null 2>&1 || {
+    echo "Yazi is not installed. Run ./install_yazi.sh first." >&2
+    exit 1
+  }
+
+  if ! command -v xdg-desktop-portal-termfilechooser >/dev/null 2>&1 && \
+    [[ ! -x /usr/lib/xdg-desktop-portal-termfilechooser ]] && \
+    [[ ! -x /usr/local/lib/xdg-desktop-portal-termfilechooser ]]; then
+    echo "The terminal file chooser portal is not installed. Run ./install_yazi.sh first." >&2
+    exit 1
+  fi
+
+  if [[ ! -x $sync_script ]]; then
+    echo "Yazi theme sync helper was not stowed: $sync_script" >&2
+    exit 1
+  fi
+
+  # Directory launches use Yazi, and future Omarchy theme changes regenerate
+  # Yazi's palette from the newly active theme.
+  HOME="$target_home" XDG_CONFIG_HOME="$target_config_home" \
+    xdg-mime default yazi.desktop inode/directory
+  HOME="$target_home" XDG_CONFIG_HOME="$target_config_home" \
+    omarchy hook install theme-set "$sync_script"
+
+  if [[ -r $colors_file ]]; then
+    HOME="$target_home" XDG_CONFIG_HOME="$target_config_home" "$sync_script"
+  else
+    echo "Active Omarchy colors are not present yet; the theme hook will generate Yazi's theme after the next theme change."
+  fi
+
+  # Only reload the live desktop when deploying to the current user's actual
+  # home. Alternate targets are used for profile previews and setup tests.
+  if [[ $resolved_target_home == "$(realpath -m -- "$HOME")" ]]; then
+    if command -v hyprctl >/dev/null 2>&1 && [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then
+      hyprctl reload >/dev/null
+      if [[ -n $(hyprctl configerrors) ]]; then
+        hyprctl configerrors >&2
+        exit 1
+      fi
+    fi
+
+    if command -v systemctl >/dev/null 2>&1 && [[ -n ${DBUS_SESSION_BUS_ADDRESS:-} ]]; then
+      systemctl --user restart xdg-desktop-portal-termfilechooser.service
+      systemctl --user restart xdg-desktop-portal.service
+    fi
+  fi
+}
+
 # Unstow mutually exclusive packages first so switching machine profiles does
 # not leave links from the previous profile behind.
 unstow_package ghostty
 unstow_package ghostty_big_screen
 unstow_package bin_laptop
 
-shared_packages=(bash tmux zellij herdr omarchy hypr starship ssh bin vscode)
+shared_packages=(bash tmux zellij herdr omarchy hypr starship ssh bin vscode yazi)
 for package in "${shared_packages[@]}"; do
   stow_package "$package"
 done
@@ -134,6 +187,8 @@ else
   stow_package ghostty
   stow_package bin_laptop
 fi
+
+configure_yazi
 
 echo "Stowed Omarchy setup for the $profile profile into $target_home."
 if [[ -n $backup_root ]]; then

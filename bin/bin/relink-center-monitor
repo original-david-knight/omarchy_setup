@@ -1,0 +1,37 @@
+#!/bin/bash
+
+set -euo pipefail
+
+monitor_description="LG Electronics LG ULTRAGEAR+ 509RMDZ52650"
+
+case "${1:-}" in
+  --startup)
+    # Let the OLED finish waking before forcing a fresh DisplayPort/DSC link.
+    sleep 5
+    ;;
+  "")
+    ;;
+  *)
+    echo "Usage: relink-center-monitor [--startup]" >&2
+    exit 2
+    ;;
+esac
+
+connector=$(hyprctl -j monitors all | jq -r --arg description "$monitor_description" \
+  'first(.[] | select(.description == $description) | .name) // empty')
+
+# Restrict the interpolated value to a real DRM connector name.
+if [[ ! $connector =~ ^(DP|HDMI-A)-[0-9]+$ ]]; then
+  exit 0
+fi
+
+turn_on() {
+  hyprctl dispatch "hl.dsp.dpms({ action = \"on\", monitor = \"$connector\" })" >/dev/null 2>&1 || true
+}
+
+# Ensure an interruption cannot leave the display powered down.
+trap turn_on EXIT INT TERM
+hyprctl dispatch "hl.dsp.dpms({ action = \"off\", monitor = \"$connector\" })" >/dev/null
+sleep 2
+turn_on
+trap - EXIT INT TERM

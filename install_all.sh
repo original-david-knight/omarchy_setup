@@ -2,6 +2,7 @@
 
 . ./setup_sudo.sh 
 . ./install_chrome.sh
+./install_yazi.sh || exit 1
 . ./install_brave.sh
 . ./install_stow.sh
 . ./install_tmux.sh
