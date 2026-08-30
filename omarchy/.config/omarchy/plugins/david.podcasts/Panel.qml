@@ -23,10 +23,15 @@ Panel {
   property bool playerAvailable: false
   property bool hadActivePlayback: false
   property bool completing: false
+  property bool scrubbing: false
+  property bool switchingEpisode: false
+  property real expectedPosition: 0
+  property var localProgress: ({})
+  property var saveQueue: []
 
   readonly property var entries: queueData && Array.isArray(queueData.entries) ? queueData.entries : []
   readonly property var currentEntry: currentIndex >= 0 && currentIndex < entries.length ? entries[currentIndex] : null
-  readonly property bool playing: playerAvailable && !idle && !paused
+  readonly property bool playing: playerAvailable && !idle && !paused && !switchingEpisode
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color dim: Color.muted
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
@@ -47,7 +52,20 @@ Panel {
   function consume(raw) {
     try {
       var activeId = currentEntry ? String(currentEntry.episode_id) : ""
-      queueData = JSON.parse(String(raw || ""))
+      var nextQueue = JSON.parse(String(raw || ""))
+      var nextEntries = nextQueue && Array.isArray(nextQueue.entries) ? nextQueue.entries : []
+      var nextProgress = ({})
+      for (var i = 0; i < nextEntries.length; i++) {
+        var entry = nextEntries[i]
+        var key = episodeKey(entry)
+        if (!key) continue
+        if (key === activeId && Object.prototype.hasOwnProperty.call(localProgress, key))
+          nextProgress[key] = localProgress[key]
+        else
+          nextProgress[key] = Math.max(0, Number(entry.position_seconds || 0))
+      }
+      localProgress = nextProgress
+      queueData = nextQueue
       if (activeId) currentIndex = findEpisode(activeId)
     } catch (error) {
       errorText = "Podcast queue could not be read"
@@ -69,7 +87,44 @@ Panel {
     return true
   }
 
-  function playEpisode(index) {
+  function episodeKey(entry) {
+    return entry ? String(entry.episode_id || "") : ""
+  }
+
+  function rememberProgress(entry, seconds) {
+    var key = episodeKey(entry)
+    if (key) localProgress[key] = Math.max(0, Number(seconds || 0))
+  }
+
+  function savedPositionFor(entry) {
+    var key = episodeKey(entry)
+    if (key && Object.prototype.hasOwnProperty.call(localProgress, key))
+      return Math.max(0, Number(localProgress[key] || 0))
+    return Math.max(0, Number(entry.position_seconds || 0))
+  }
+
+  function queueProgressSave(entry, savedPosition, savedDuration, completed) {
+    if (!entry) return
+    var at = completed && savedDuration > 0 ? savedDuration : savedPosition
+    at = Math.max(0, Number(at || 0))
+    savedDuration = Math.max(0, Number(savedDuration || 0))
+    rememberProgress(entry, at)
+    saveQueue = saveQueue.concat([[
+      helper, "save", episodeKey(entry), String(at), String(savedDuration),
+      completed ? "true" : "false"
+    ]])
+    pumpSaveQueue()
+  }
+
+  function pumpSaveQueue() {
+    if (saveProcess.running || saveQueue.length === 0) return
+    var nextSave = saveQueue[0]
+    saveQueue = saveQueue.slice(1)
+    saveProcess.command = nextSave
+    saveProcess.running = true
+  }
+
+  function playEpisode(index, skipOutgoingSave) {
     if (index < 0 || index >= entries.length) return
     var entry = entries[index]
     if (!entry.enclosure_url) {
@@ -80,42 +135,66 @@ Panel {
       runControl(["toggle"])
       return
     }
+    var savedPosition = savedPositionFor(entry)
+    var savedDuration = Number(entry.duration_seconds || 0)
+    // Replaying an item that was previously completed should start from the
+    // beginning instead of loading at EOF and immediately advancing again.
+    if (entry.completed && savedDuration > 0 && savedPosition >= savedDuration - 1)
+      savedPosition = 0
     currentIndex = index
-    position = Number(entry.position_seconds || 0)
-    duration = Number(entry.duration_seconds || 0)
+    position = savedPosition
+    expectedPosition = savedPosition
+    duration = savedDuration
+    rememberProgress(entry, savedPosition)
+    switchingEpisode = true
     paused = false
     idle = false
-    hadActivePlayback = true
+    // mpv can remain idle briefly while it opens a remote enclosure. Only a
+    // later non-idle status proves playback started; otherwise the status poll
+    // mistakes that startup window for EOF and completes the episode.
+    hadActivePlayback = false
     completing = false
-    runControl([
-      "load",
+    if (!runControl([
+      skipOutgoingSave ? "load" : "switch",
       String(entry.episode_id),
       String(entry.enclosure_url),
       String(position),
       String(duration),
       String(entry.title || "Untitled episode"),
       String(entry.show_title || "Podcast")
-    ])
+    ])) switchingEpisode = false
   }
 
   function saveProgress(completed) {
-    if (!currentEntry || saveProcess.running) return
-    var savedPosition = completed && duration > 0 ? duration : position
-    saveProcess.command = [
-      helper, "save", String(currentEntry.episode_id),
-      String(Math.max(0, savedPosition)), String(Math.max(0, duration)),
-      completed ? "true" : "false"
-    ]
-    saveProcess.running = true
+    if (!currentEntry) return
+    queueProgressSave(currentEntry, position, duration, completed)
+  }
+
+  function previewSeek(mouseX, trackWidth) {
+    if (!currentEntry || duration <= 0 || trackWidth <= 0) return
+    position = duration * Math.max(0, Math.min(1, mouseX / trackWidth))
+  }
+
+  function commitSeek() {
+    if (!currentEntry || duration <= 0) return
+    position = Math.max(0, Math.min(duration, position))
+    if (!idle && !seekProcess.running) {
+      seekProcess.command = [helper, "seek-to", String(position)]
+      seekProcess.running = true
+    }
+    // Persist even while idle so selecting a position also repairs progress
+    // that was incorrectly marked complete by an earlier playback failure.
+    saveProgress(false)
   }
 
   function nextEpisode(completed) {
     if (currentIndex < 0) return
     saveProgress(completed)
     if (currentIndex + 1 < entries.length) {
-      playEpisode(currentIndex + 1)
+      playEpisode(currentIndex + 1, true)
     } else {
       runControl(["stop"])
+      switchingEpisode = false
       paused = true
       idle = true
       hadActivePlayback = false
@@ -136,20 +215,64 @@ Panel {
       var status = JSON.parse(String(raw || ""))
       var nextIdle = Boolean(status.idle)
       playerAvailable = Boolean(status.available)
+      var statusEpisodeId = String(status.episode_id || "")
+
+      if (currentIndex < 0 && statusEpisodeId)
+        currentIndex = findEpisode(statusEpisodeId)
+
+      // A poll started before an episode switch can finish after currentIndex
+      // changes. Never apply that outgoing episode's state to the new entry.
+      if (currentEntry && statusEpisodeId && episodeKey(currentEntry) !== statusEpisodeId) {
+        // The instance that initiated a switch ignores its in-flight old poll;
+        // peer monitor instances follow the shared player to the new episode.
+        if (controlProcess.running) return
+        var statusIndex = findEpisode(statusEpisodeId)
+        if (statusIndex >= 0) currentIndex = statusIndex
+      }
+
       var reportedPosition = Math.max(0, Number(status.position || 0))
-      if (!nextIdle || reportedPosition > 0) position = reportedPosition
-      duration = Math.max(0, Number(status.duration || (currentEntry ? currentEntry.duration_seconds : 0) || 0))
+      var reportedDuration = Math.max(0, Number(status.duration || (currentEntry ? currentEntry.duration_seconds : 0) || 0))
+
+      if (switchingEpisode && currentEntry && statusEpisodeId
+          && episodeKey(currentEntry) === statusEpisodeId) {
+        expectedPosition = Math.max(0, Number(status.start_position === undefined
+          ? savedPositionFor(currentEntry)
+          : status.start_position))
+        position = expectedPosition
+        duration = reportedDuration
+        speed = Number(status.speed || 1)
+        paused = Boolean(status.paused)
+        rememberProgress(currentEntry, expectedPosition)
+
+        var sourceMatches = !status.source_url || String(status.path || "") === String(status.source_url)
+        var reachedExpected = expectedPosition <= 1 || reportedPosition >= expectedPosition - 2
+        if (!sourceMatches || nextIdle || !reachedExpected) return
+        switchingEpisode = false
+      }
+
+      if (!scrubbing && (!nextIdle || reportedPosition > 0)) position = reportedPosition
+      duration = reportedDuration
       speed = Number(status.speed || 1)
       paused = Boolean(status.paused)
 
-      if (currentIndex < 0 && status.episode_id)
-        currentIndex = findEpisode(status.episode_id)
+      if (currentEntry && !scrubbing) rememberProgress(currentEntry, position)
 
       if (!nextIdle) hadActivePlayback = true
       if (nextIdle && !idle && hadActivePlayback && currentIndex >= 0 && !completing) {
         completing = true
         idle = true
-        nextEpisode(true)
+        paused = true
+        // idle-active also becomes true after stop, load failure, and some
+        // media-source operations. Only advance when playback was actually
+        // close enough to the end to count as completed.
+        var reachedEnd = duration > 0 && position >= Math.max(0, duration - 30)
+        if (reachedEnd) {
+          nextEpisode(true)
+        } else {
+          saveProgress(false)
+          hadActivePlayback = false
+          completing = false
+        }
         return
       }
       idle = nextIdle
@@ -212,7 +335,24 @@ Panel {
     }
   }
 
-  Process { id: saveProcess; command: [] }
+  Process {
+    id: saveProcess
+    command: []
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: if (String(text || "").trim()) root.errorText = String(text).trim()
+    }
+    onExited: Qt.callLater(function() { root.pumpSaveQueue() })
+  }
+
+  Process {
+    id: seekProcess
+    command: []
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: if (String(text || "").trim()) root.errorText = String(text).trim()
+    }
+  }
 
   Process {
     id: statusProcess
@@ -408,16 +548,55 @@ Panel {
                 elide: Text.ElideRight
               }
 
-              Rectangle {
+              Item {
+                id: seekTrack
                 width: parent.width
-                height: Style.space(4)
-                radius: height / 2
-                color: Style.normalBorderFor(root.foreground, Color.accent)
+                height: Style.space(14)
+
                 Rectangle {
-                  height: parent.height
+                  anchors.left: parent.left
+                  anchors.right: parent.right
+                  anchors.verticalCenter: parent.verticalCenter
+                  height: Style.space(4)
                   radius: height / 2
+                  color: Style.normalBorderFor(root.foreground, Color.accent)
+
+                  Rectangle {
+                    height: parent.height
+                    radius: height / 2
+                    color: Color.accent
+                    width: parent.width * Math.min(1, root.duration > 0 ? root.position / root.duration : 0)
+                  }
+                }
+
+                Rectangle {
+                  width: Style.space(10)
+                  height: width
+                  radius: width / 2
                   color: Color.accent
-                  width: parent.width * Math.min(1, root.duration > 0 ? root.position / root.duration : 0)
+                  x: Math.max(0, Math.min(parent.width - width,
+                    parent.width * Math.min(1, root.duration > 0 ? root.position / root.duration : 0) - width / 2))
+                  anchors.verticalCenter: parent.verticalCenter
+                }
+
+                MouseArea {
+                  anchors.fill: parent
+                  enabled: !root.switchingEpisode
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onPressed: function(mouse) {
+                    root.scrubbing = true
+                    root.previewSeek(mouse.x, width)
+                  }
+                  onPositionChanged: function(mouse) {
+                    if (pressed) root.previewSeek(mouse.x, width)
+                  }
+                  onReleased: function(mouse) {
+                    root.previewSeek(mouse.x, width)
+                    root.scrubbing = false
+                    root.commitSeek()
+                  }
+                  onCanceled: root.scrubbing = false
                 }
               }
 
@@ -469,6 +648,7 @@ Panel {
                   width: parent.width - x
                   anchors.verticalCenter: parent.verticalCenter
                   text: root.clock(root.position) + " / " + root.clock(root.duration)
+                    + (root.switchingEpisode ? "  ·  Loading…" : "")
                   color: root.dim
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
@@ -548,7 +728,7 @@ Panel {
 
           Text {
             width: parent.width
-            text: "Click an episode to play  ·  Space play/pause  ·  E edit queue  ·  Esc close"
+            text: "Click an episode to play  ·  Drag progress to seek  ·  Space play/pause  ·  E edit queue  ·  Esc close"
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
