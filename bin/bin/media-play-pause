@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+player="${PODCAST_PLAYER:-$HOME/.config/omarchy/plugins/david.podcasts/player}"
+omarchy_shell="${OMARCHY_SHELL:-omarchy-shell}"
+
+if [[ -x $player ]]; then
+  status="$($player status 2>/dev/null || true)"
+  if jq -e '
+    .available == true
+    and .idle == false
+    and ((.episode_id // "") | length > 0)
+  ' <<<"$status" >/dev/null 2>&1; then
+    exec "$player" toggle
+  fi
+fi
+
+exec "$omarchy_shell" media playPause

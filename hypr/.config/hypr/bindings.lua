@@ -71,9 +71,13 @@ o.bind(
 -- Quattro-native media and volume commands.
 o.bind("code:163", "Next track", "omarchy-shell media next", { locked = true })
 o.bind("code:165", "Previous track", "omarchy-shell media previous", { locked = true })
-o.bind("code:200", "Play/pause", "omarchy-shell media playPause", { locked = true })
-o.bind("code:201", "Play/pause", "omarchy-shell media playPause", { locked = true })
-o.bind("SUPER + BACKSLASH", "Play/pause", "omarchy-shell media playPause", { locked = true })
+hl.unbind("XF86AudioPause") -- Was: Omarchy media play/pause.
+hl.unbind("XF86AudioPlay") -- Was: Omarchy media play/pause.
+o.bind("XF86AudioPause", "Play/pause", home .. "/bin/media-play-pause", { locked = true })
+o.bind("XF86AudioPlay", "Play/pause", home .. "/bin/media-play-pause", { locked = true })
+o.bind("code:200", "Play/pause", home .. "/bin/media-play-pause", { locked = true })
+o.bind("code:201", "Play/pause", home .. "/bin/media-play-pause", { locked = true })
+o.bind("SUPER + BACKSLASH", "Play/pause", home .. "/bin/media-play-pause", { locked = true })
 o.bind("CTRL + SHIFT + J", "Volume down", "omarchy-audio-output-volume -3", { locked = true })
 o.bind("CTRL + SHIFT + K", "Volume up", "omarchy-audio-output-volume +3", { locked = true })
 
