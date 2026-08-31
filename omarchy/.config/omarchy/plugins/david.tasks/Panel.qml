@@ -15,8 +15,11 @@ Panel {
   property var taskData: ({ open: 0, meta: "", tasks: [] })
   property string errorText: ""
   property string fetchStderr: ""
+  property string createError: ""
+  property string createStderr: ""
   property bool loading: false
   property bool hasLoaded: false
+  property bool addingTask: false
 
   readonly property var tasks: taskData && Array.isArray(taskData.tasks) ? taskData.tasks : []
   readonly property int openCount: Number(taskData && taskData.open !== undefined ? taskData.open : 0)
@@ -47,6 +50,34 @@ Panel {
     loading = false
   }
 
+  function startAddingTask() {
+    addingTask = true
+    createError = ""
+    Qt.callLater(function() {
+      taskInput.text = ""
+      taskInput.forceActiveFocus()
+    })
+  }
+
+  function stopAddingTask() {
+    if (createProcess.running) return
+    addingTask = false
+    createError = ""
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function submitTask() {
+    var title = taskInput.text.trim()
+    if (title === "" || createProcess.running) return
+    createError = ""
+    createStderr = ""
+    createProcess.command = [
+      Quickshell.env("HOME") + "/.config/omarchy/plugins/david.tasks/create",
+      title
+    ]
+    createProcess.running = true
+  }
+
   onOpenedChanged: if (opened) {
     refresh()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
@@ -67,6 +98,26 @@ Panel {
       root.loading = false
       if (exitCode !== 0)
         root.errorText = root.fetchStderr || "Everything App is unavailable"
+    }
+  }
+
+  Process {
+    id: createProcess
+    command: []
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.createStderr = String(text || "").trim()
+    }
+    onExited: function(exitCode) {
+      if (exitCode === 0) {
+        taskInput.text = ""
+        root.addingTask = false
+        root.refresh()
+        Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+      } else {
+        root.createError = root.createStderr || "Task could not be added"
+        Qt.callLater(function() { taskInput.forceActiveFocus() })
+      }
     }
   }
 
@@ -112,6 +163,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
+      blocked: taskInput.activeFocus
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onActivateRequested: root.refresh()
@@ -122,6 +174,7 @@ Panel {
       }
       onTextKey: function(text) {
         if (text === "r" || text === "R") root.refresh()
+        else if (text === "+" || text === "a" || text === "A") root.startAddingTask()
         else if (text === "o" || text === "O") {
           if (root.bar) root.bar.run("~/.local/bin/everything-agent open /")
           root.close()
@@ -146,6 +199,7 @@ Panel {
 
           Row {
             width: parent.width
+            spacing: Style.space(8)
 
             Text {
               id: title
@@ -157,13 +211,29 @@ Panel {
             }
 
             Text {
-              width: parent.width - x
+              width: parent.width - title.width - addTaskButton.width - parent.spacing * 2
               anchors.baseline: title.baseline
               text: root.taskData.meta || (root.openCount + " open")
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
               horizontalAlignment: Text.AlignRight
+            }
+
+            PanelActionButton {
+              id: addTaskButton
+              anchors.verticalCenter: parent.verticalCenter
+              iconText: "+"
+              tooltipText: root.addingTask ? "Cancel adding a task" : "Add a task"
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              fontSize: Style.font.title
+              size: Style.space(24)
+              focusable: true
+              onClicked: {
+                if (root.addingTask) root.stopAddingTask()
+                else root.startAddingTask()
+              }
             }
           }
 
@@ -184,6 +254,57 @@ Panel {
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
             wrapMode: Text.WordWrap
+          }
+
+          Column {
+            visible: root.addingTask
+            width: parent.width
+            spacing: Style.space(4)
+
+            Row {
+              width: parent.width
+              spacing: Style.space(6)
+
+              TextField {
+                id: taskInput
+                width: parent.width - submitTaskButton.width - parent.spacing
+                enabled: !createProcess.running
+                placeholderText: "Add a task"
+                foreground: root.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+
+                onAccepted: root.submitTask()
+                Keys.onPressed: function(event) {
+                  if (event.key === Qt.Key_Escape) {
+                    root.stopAddingTask()
+                    event.accepted = true
+                  }
+                }
+              }
+
+              PanelActionButton {
+                id: submitTaskButton
+                anchors.verticalCenter: parent.verticalCenter
+                iconText: createProcess.running ? "…" : "✓"
+                tooltipText: "Add task"
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                size: taskInput.implicitHeight
+                enabled: !createProcess.running && taskInput.text.trim() !== ""
+                onClicked: root.submitTask()
+              }
+            }
+
+            Text {
+              visible: root.createError !== ""
+              width: parent.width
+              text: root.createError
+              color: Color.urgent
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap
+            }
           }
 
           Column {
@@ -257,7 +378,7 @@ Panel {
 
           Text {
             width: parent.width
-            text: "R refresh  ·  O full dashboard  ·  Esc close"
+            text: "+ / A add  ·  R refresh  ·  O full dashboard  ·  Esc close"
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption

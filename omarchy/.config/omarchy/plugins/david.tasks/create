@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if (( $# != 1 )) || [[ -z ${1//[[:space:]]/} ]]; then
+  echo "A task title is required" >&2
+  exit 2
+fi
+
+config="${EVERYTHING_AGENT_CONFIG_DIR:-$HOME/.config/everything-agent}/config.json"
+service_url="$(jq -er '.service_url | rtrimstr("/")' "$config")"
+token="$(jq -er .token "$config")"
+payload="$(jq -cn --arg title "$1" '{title: $title}')"
+
+response="$(
+  curl -sS --max-time 20 \
+    -H "Authorization: Bearer $token" \
+    -H "Content-Type: application/json" \
+    --data-binary "$payload" \
+    --write-out $'\n%{http_code}' \
+    "$service_url/api/tasks"
+)"
+body="${response%$'\n'*}"
+status="${response##*$'\n'}"
+
+if [[ $status == 2* ]]; then
+  jq -e '.id and .title' <<<"$body" >/dev/null
+  exit 0
+fi
+
+message="$(jq -r '.error // .message // empty' <<<"$body" 2>/dev/null || true)"
+if [[ -n $message ]]; then
+  echo "$message" >&2
+else
+  echo "Everything App refused the task (HTTP $status)" >&2
+fi
+exit 1

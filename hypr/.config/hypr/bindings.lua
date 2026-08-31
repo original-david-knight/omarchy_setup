@@ -35,7 +35,7 @@ hl.unbind("SUPER + SHIFT + B") -- Was: Quattro default browser.
 o.bind(
   "SUPER + SHIFT + B",
   "Chrome work profile",
-  { launch = 'google-chrome-stable --profile-directory="Profile 2" --new-window' }
+  { launch = 'google-chrome-stable --profile-directory="Profile 1" --new-window' }
 )
 
 o.bind("SUPER + A", "Asteroids", { launch = home .. "/.cargo/bin/asteroids" })

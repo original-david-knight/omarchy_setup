@@ -51,9 +51,10 @@ bar height are configured in `omarchy/.config/omarchy/shell.toml`; the 18 px bas
 font scales the stock 26 px bar to 39 px.
 
 The Everything-backed entry in both layouts is `david.tasks`, a focused task
-list plugin tracked in this repo. It reads `/api/tasks` with the desktop bearer
-from `~/.config/everything-agent/config.json`; the broader `david.everything`
-summary plugin installed by everything-app is intentionally not in the bar.
+list plugin tracked in this repo. It reads and creates rows through `/api/tasks`
+with the desktop bearer from `~/.config/everything-agent/config.json`; the
+broader `david.everything` summary plugin installed by everything-app is
+intentionally not in the bar.
 The always-expanded `david.tray` clone is tracked alongside the task, Jira,
 GitHub, and podcast widgets, so every custom ID in either layout has a matching
 plugin in the public stow package. `stow_all.sh` validates that invariant.
