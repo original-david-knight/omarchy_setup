@@ -50,9 +50,13 @@ spacer and anchors the clock at the center. Shell-wide font size and horizontal
 bar height are configured in `omarchy/.config/omarchy/shell.toml`; the 18 px base
 font scales the stock 26 px bar to 39 px.
 
-The Everything entry in both layouts is `david.everything`, the bar plugin
-that everything-app's `scripts/install-everything-agent.sh` installs into
-`~/.config/omarchy/plugins/david.everything/`; it is not part of this repo.
+The Everything-backed entry in both layouts is `david.tasks`, a focused task
+list plugin tracked in this repo. It reads `/api/tasks` with the desktop bearer
+from `~/.config/everything-agent/config.json`; the broader `david.everything`
+summary plugin installed by everything-app is intentionally not in the bar.
+The always-expanded `david.tray` clone is tracked alongside the task, Jira,
+GitHub, and podcast widgets, so every custom ID in either layout has a matching
+plugin in the public stow package. `stow_all.sh` validates that invariant.
 
 `herdr` and `bin` must remain non-folded because those directories also hold
 runtime state or files owned outside this repository. The deployment script
@@ -118,11 +122,14 @@ The public repo comes first because a fresh machine has no credentials:
 4. `cd ~/workspace/omarchy-setup-private && ./go.sh` — the private half:
    secrets, SSH keys, Postgres, and `setup_everything_app.sh`, which leaves
    Everything App built, authenticated against the hosted service, and
-   running (companion, bar widgets, pm watchers, morning launcher).
+   running (companion, bar widgets, pm watchers, morning launcher). The
+   companion installer briefly offers its stock summary widget; private setup
+   re-runs this repo's stow pass afterward so the tracked task-only layout and
+   its `shell.json` symlink remain authoritative.
 
 What this repo already carries for Everything App: `autostart.lua` launches
 `~/.local/bin/lifedash-open` when it exists, the stowed `shell.json` places
-the Everything bar widget, and that widget and the `david.jira-work`,
+the task-list bar widget, and that widget and the `david.jira-work`,
 `david.github-work` and `david.podcasts` plugins all read the companion's
 `~/.config/everything-agent/config.json`. None of it works until the private
 step has minted that config.

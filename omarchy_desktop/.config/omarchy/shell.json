@@ -18,10 +18,12 @@
           "size": 440
         },
         {
+          "id": "omarchy.clock",
           "format": "HH:mm",
           "formatAlt": "d MMMM 'W'ww yyyy",
-          "id": "omarchy.clock",
-          "verticalFormat": "HH\n\u2014\nmm"
+          "verticalFormat": "HH\n—\nmm",
+          "birthYear": 1966,
+          "lifeExpectancy": 90
         },
         {
           "id": "omarchy.keyboard-layout"
@@ -43,7 +45,30 @@
       ],
       "right": [
         {
-          "id": "omarchy.tray"
+          "id": "david.tray",
+          "pinned": [
+            "Slack_status_icon_1"
+          ]
+        },
+        {
+          "id": "omarchy.spacer",
+          "size": 24
+        },
+        {
+          "id": "david.github-work"
+        },
+        {
+          "id": "david.jira-work"
+        },
+        {
+          "id": "david.podcasts"
+        },
+        {
+          "id": "david.tasks"
+        },
+        {
+          "id": "omarchy.spacer",
+          "size": 320
         },
         {
           "id": "omarchy.tailscale"
@@ -65,18 +90,6 @@
         },
         {
           "id": "omarchy.monitor"
-        },
-        {
-          "id": "david.github-work"
-        },
-        {
-          "id": "david.jira-work"
-        },
-        {
-          "id": "david.podcasts"
-        },
-        {
-          "id": "david.everything"
         },
         {
           "id": "omarchy.power"

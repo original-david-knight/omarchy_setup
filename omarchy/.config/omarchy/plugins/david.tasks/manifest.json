@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "david.tasks",
+  "name": "Everything tasks",
+  "version": "1.0.0",
+  "author": "David Knight",
+  "description": "The task list from Everything App.",
+  "kinds": ["bar-widget"],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Everything tasks",
+    "description": "Your Everything App task list in a compact native panel.",
+    "category": "Productivity",
+    "aliases": ["tasks", "todo", "everything"],
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
