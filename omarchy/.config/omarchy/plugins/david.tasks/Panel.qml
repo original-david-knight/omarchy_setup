@@ -5,21 +5,24 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
+// A focused view of Everything App's task board. The desktop bearer remains
+// in the agent's mode-0600 config; fetch is the only process that reads it.
 Panel {
   id: root
-  moduleName: "david.jira-work"
-  ipcTarget: "david.jira-work"
+  moduleName: "david.tasks"
+  ipcTarget: "david.tasks"
 
-  property var jiraData: ({ issues: [] })
+  property var taskData: ({ open: 0, meta: "", tasks: [] })
   property string errorText: ""
   property string fetchStderr: ""
   property bool loading: false
+  property bool hasLoaded: false
 
-  readonly property var issues: jiraData && Array.isArray(jiraData.issues) ? jiraData.issues : []
+  readonly property var tasks: taskData && Array.isArray(taskData.tasks) ? taskData.tasks : []
+  readonly property int openCount: Number(taskData && taskData.open !== undefined ? taskData.open : 0)
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color dim: Color.muted
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
-  readonly property string opener: Quickshell.env("HOME") + "/bin/open-work-url"
 
   visible: true
   implicitWidth: button.implicitWidth
@@ -35,18 +38,13 @@ Panel {
 
   function consume(raw) {
     try {
-      jiraData = JSON.parse(String(raw || ""))
-      errorText = String(jiraData.last_error || "")
+      taskData = JSON.parse(String(raw || ""))
+      errorText = ""
+      hasLoaded = true
     } catch (error) {
-      errorText = "Jira tickets could not be read"
+      errorText = "Everything tasks could not be read"
     }
     loading = false
-  }
-
-  function openUrl(url) {
-    if (!url || openProcess.running) return
-    openProcess.command = [opener, String(url)]
-    openProcess.running = true
   }
 
   onOpenedChanged: if (opened) {
@@ -56,7 +54,7 @@ Panel {
 
   Process {
     id: fetchProcess
-    command: [Quickshell.env("HOME") + "/.config/omarchy/plugins/david.jira-work/fetch"]
+    command: [Quickshell.env("HOME") + "/.config/omarchy/plugins/david.tasks/fetch"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: root.consume(text)
@@ -67,11 +65,10 @@ Panel {
     }
     onExited: function(exitCode) {
       root.loading = false
-      if (exitCode !== 0) root.errorText = root.fetchStderr || "Jira is unavailable"
+      if (exitCode !== 0)
+        root.errorText = root.fetchStderr || "Everything App is unavailable"
     }
   }
-
-  Process { id: openProcess; command: [] }
 
   Timer {
     interval: 300000
@@ -85,20 +82,20 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: "JI"
-    fontFamily: "URW Gothic"
-    tooltipText: "Jira · " + root.issues.length + " assigned\nLeft: tickets · Right: Jira"
+    text: "T"
+    tooltipText: "Tasks · " + root.openCount + " open\nLeft: task list · Right: Everything"
     active: root.errorText !== ""
     fontSize: Style.font.body
     horizontalMargin: 7
 
     onPressed: function(buttonCode) {
-      if (buttonCode === Qt.RightButton)
-        root.openUrl("jira")
-      else if (buttonCode === Qt.MiddleButton)
+      if (buttonCode === Qt.RightButton) {
+        if (root.bar) root.bar.run("~/.local/bin/everything-agent open /")
+      } else if (buttonCode === Qt.MiddleButton) {
         root.refresh()
-      else
+      } else {
         root.toggle()
+      }
     }
   }
 
@@ -109,7 +106,7 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(500))
+    contentWidth: panel.fittedContentWidth(Style.space(460))
     contentHeight: panel.fittedContentHeight(contentColumn.implicitHeight, Style.space(680))
 
     PanelKeyCatcher {
@@ -125,8 +122,10 @@ Panel {
       }
       onTextKey: function(text) {
         if (text === "r" || text === "R") root.refresh()
-        else if (text === "o" || text === "O")
-          root.openUrl("jira")
+        else if (text === "o" || text === "O") {
+          if (root.bar) root.bar.run("~/.local/bin/everything-agent open /")
+          root.close()
+        }
       }
 
       Flickable {
@@ -147,18 +146,20 @@ Panel {
 
           Row {
             width: parent.width
+
             Text {
               id: title
-              text: "Assigned Jira tickets"
+              text: "Tasks"
               color: root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.title
               font.bold: true
             }
+
             Text {
               width: parent.width - x
               anchors.baseline: title.baseline
-              text: root.jiraData.last_sync ? "Synced " + root.jiraData.last_sync : ""
+              text: root.taskData.meta || (root.openCount + " open")
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -185,61 +186,78 @@ Panel {
             wrapMode: Text.WordWrap
           }
 
-          Text {
-            visible: root.issues.length === 0 && !root.loading
-            text: "No unresolved tickets are assigned to you."
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-          }
+          Column {
+            id: taskSection
+            width: parent.width
+            spacing: Style.space(4)
 
-          Repeater {
-            model: root.issues
-            Item {
-              required property var modelData
-              width: contentColumn.width
-              implicitHeight: issueCopy.implicitHeight + Style.space(12)
-              Rectangle {
-                anchors.fill: parent
-                radius: Style.cornerRadius
-                color: issueMouse.containsMouse ? Style.hoverFillFor(root.foreground, Color.accent) : "transparent"
-              }
-              Column {
-                id: issueCopy
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: Style.space(2)
-                Text {
-                  width: parent.width
-                  text: modelData.key + "  ·  " + modelData.title
-                  color: root.foreground
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.bodySmall
-                  wrapMode: Text.WordWrap
+            PanelSeparator { width: parent.width; foreground: root.foreground }
+
+            Text {
+              visible: root.hasLoaded && root.tasks.length === 0 && !root.loading
+              width: parent.width
+              text: "Nothing on your list."
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+
+            Repeater {
+              model: root.tasks
+
+              Item {
+                required property var modelData
+                width: taskSection.width
+                implicitHeight: taskCopy.implicitHeight + Style.space(10)
+
+                Row {
+                  id: taskCopy
+                  anchors.left: parent.left
+                  anchors.right: parent.right
+                  anchors.verticalCenter: parent.verticalCenter
+                  spacing: Style.space(7)
+
+                  Text {
+                    width: Style.space(18)
+                    text: modelData.done ? "✓" : "□"
+                    color: modelData.done ? root.dim : root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    horizontalAlignment: Text.AlignHCenter
+                  }
+
+                  Column {
+                    width: taskCopy.width - x
+                    spacing: Style.space(2)
+
+                    Text {
+                      width: parent.width
+                      text: modelData.title
+                      color: modelData.done ? root.dim : root.foreground
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.bodySmall
+                      font.strikeout: Boolean(modelData.done)
+                      wrapMode: Text.WordWrap
+                    }
+
+                    Text {
+                      visible: String(modelData.source || "") !== ""
+                      width: parent.width
+                      text: modelData.source
+                      color: root.dim
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.caption
+                      elide: Text.ElideRight
+                    }
+                  }
                 }
-                Text {
-                  width: parent.width
-                  text: modelData.line
-                  color: modelData.category === "indeterminate" ? Color.accent : root.dim
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                  elide: Text.ElideRight
-                }
-              }
-              MouseArea {
-                id: issueMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.openUrl(modelData.url)
               }
             }
           }
 
           Text {
             width: parent.width
-            text: "Click a ticket to open it in work Chrome  ·  R refresh  ·  Esc close"
+            text: "R refresh  ·  O full dashboard  ·  Esc close"
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption

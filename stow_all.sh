@@ -117,6 +117,58 @@ stow_package() {
   stow --restow --no-folding --dir="$repo_dir" --target="$target_home" "$package"
 }
 
+validate_bar_setup() {
+  local shell_config="$target_home/.config/omarchy/shell.json"
+  local plugin_id plugin_dir source_plugin_dir
+  local -a plugin_ids=()
+
+  [[ -r $shell_config ]] || {
+    echo "Omarchy bar config was not stowed: $shell_config" >&2
+    return 1
+  }
+
+  if jq -e '
+    ((.bar.layout.left // []) + (.bar.layout.center // []) + (.bar.layout.right // []))
+    | any(.[]; (.id // "") == "david.everything")
+  ' "$shell_config" >/dev/null; then
+    echo "The retired david.everything widget is still in $shell_config" >&2
+    return 1
+  fi
+
+  jq -e '
+    ((.bar.layout.left // []) + (.bar.layout.center // []) + (.bar.layout.right // []))
+    | any(.[]; (.id // "") == "david.tasks")
+  ' "$shell_config" >/dev/null || {
+    echo "The Everything-backed david.tasks widget is missing from $shell_config" >&2
+    return 1
+  }
+
+  mapfile -t plugin_ids < <(jq -r '
+    ((.bar.layout.left // []) + (.bar.layout.center // []) + (.bar.layout.right // []))[]
+    | select((.type // "") == "")
+    | (.id // "")
+    | select(startswith("david."))
+  ' "$shell_config" | sort -u)
+
+  for plugin_id in "${plugin_ids[@]}"; do
+    plugin_dir="$target_home/.config/omarchy/plugins/$plugin_id"
+    source_plugin_dir="$repo_dir/omarchy/.config/omarchy/plugins/$plugin_id"
+    [[ -r $plugin_dir/manifest.json ]] || {
+      echo "Bar widget $plugin_id has no deployed plugin manifest at $plugin_dir" >&2
+      return 1
+    }
+    [[ -d $source_plugin_dir ]] || {
+      echo "Bar widget $plugin_id has no source plugin at $source_plugin_dir" >&2
+      return 1
+    }
+    # Stow deliberately deploys symlinks, while the plugin validator rejects
+    # symlinks inside its input folder. Validate the authoritative source copy.
+    omarchy plugin validate "$source_plugin_dir" >/dev/null
+  done
+
+  echo "Validated Omarchy bar with ${#plugin_ids[@]} custom widgets."
+}
+
 configure_yazi() {
   local target_config_home="$target_home/.config"
   local sync_script="$target_home/bin/sync-yazi-omarchy-theme"
@@ -192,6 +244,7 @@ else
   stow_package omarchy_laptop
 fi
 
+validate_bar_setup
 configure_yazi
 
 echo "Stowed Omarchy setup for the $profile profile into $target_home."
