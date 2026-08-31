@@ -4,6 +4,21 @@ set -euo pipefail
 player="${PODCAST_PLAYER:-$HOME/.config/omarchy/plugins/david.podcasts/player}"
 omarchy_shell="${OMARCHY_SHELL:-omarchy-shell}"
 
+# Let an active MPRIS source keep ownership of the media key. Omarchy remembers
+# that source after pausing it, so the next press resumes the same browser video.
+# The podcast widget's dedicated mpv instance remains the fallback below.
+media_status="$("$omarchy_shell" media status 2>/dev/null || true)"
+if jq -e '
+  .playing == true
+  or (
+    .hasPlayer == true
+    and ((.identity // "") | ascii_downcase) != "mpv"
+    and ((.desktopEntry // "") | ascii_downcase) != "mpv"
+  )
+' <<<"$media_status" >/dev/null 2>&1; then
+  exec "$omarchy_shell" media playPause
+fi
+
 if [[ -x $player ]]; then
   status="$($player status 2>/dev/null || true)"
   if jq -e '
