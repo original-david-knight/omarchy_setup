@@ -38,6 +38,8 @@ palette = 15=#acb0d0
 selection-background = #7aa2f7
 # Slowdown mouse scrolling
 mouse-scroll-multiplier = 1.4
+# Keep selection and middle-click paste working inside mouse-aware TUIs.
+mouse-reporting = false
 # Disable terminal focus reporting to prevent focus-locking with Claude Code
 # shell-integration-features = no-focus-reporting
 

@@ -1,4 +1,4 @@
--- Personal look-and-feel carried forward from the pre-Quattro config.
+
 hl.config({
   general = {
     gaps_in = 4,
