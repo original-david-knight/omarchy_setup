@@ -100,8 +100,10 @@ survives port renumbering after sleep or reboot.
 ## herdr keybindings
 
 `herdr/.config/herdr/config.toml` mirrors the tmux bindings, with workspace =
-tmux session, tab = tmux window, and prefix = `Ctrl-j`. Multi-key operations
-run `~/bin/herdr-tmux`, which drives herdr's socket API.
+tmux session, tab = tmux window, and prefix = `Ctrl-j`. Pane focus uses
+prefix then `Shift-h/j/k/l` for left/down/up/right; closing a workspace uses
+prefix then `Ctrl-k`. Multi-key operations run `~/bin/herdr-tmux`, which drives
+herdr's socket API.
 
 `herdr config check` only validates TOML syntax. For behavioral testing, use a
 scratch session:

@@ -41,7 +41,7 @@ edit_scrollback = "prefix+e"          # no tmux equivalent
 ## Workspaces = tmux sessions ---------------------------------------------------
 new_workspace = "prefix+shift+c"      # tmux: bind C new-session
 rename_workspace = "prefix+shift+r"   # tmux: bind R rename-session
-close_workspace = "prefix+shift+k"    # tmux: bind K kill-session
+close_workspace = "prefix+ctrl+k"     # Shift+k is reserved for pane navigation
 previous_workspace = "alt+up"         # tmux: bind -n M-Up switch-client -p
 next_workspace = "alt+down"           # tmux: bind -n M-Down switch-client -n
 
@@ -64,13 +64,13 @@ cycle_pane_next = "prefix+o"          # tmux: prefix o (select-pane -t :.+)
 cycle_pane_previous = "prefix+shift+o"
 last_pane = "prefix+tab"              # tmux: prefix ; (last-pane)
 
-focus_pane_left = "ctrl+alt+left"     # tmux: bind -n C-M-Left select-pane -L
-focus_pane_down = "ctrl+alt+down"     # tmux: bind -n C-M-Down select-pane -D
-focus_pane_up = "ctrl+alt+up"         # tmux: bind -n C-M-Up select-pane -U
-focus_pane_right = "ctrl+alt+right"   # tmux: bind -n C-M-Right select-pane -R
+# After the prefix, use Shift+h/j/k/l to focus the pane in that direction.
+focus_pane_left = "prefix+shift+h"
+focus_pane_down = "prefix+shift+j"
+focus_pane_up = "prefix+shift+k"
+focus_pane_right = "prefix+shift+l"
 
-# Navigate mode (prefix+w) keeps the tmux-ish vi keys, since focus_pane_* above
-# is on the arrow chords rather than hjkl.
+# Navigate mode (prefix+w) uses plain h/j/k/l.
 navigate_pane_left = "h"
 navigate_pane_down = "j"
 navigate_pane_up = "k"
