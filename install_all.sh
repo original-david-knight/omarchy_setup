@@ -8,6 +8,7 @@
 . ./install_tmux.sh
 . ./install_zellij.sh
 . ./install_herdr.sh
+./install_hunk.sh || exit 1
 . ./install_obsidian.sh
 . ./setup_ssh.sh
 . ./install_claude_code.sh

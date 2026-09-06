@@ -29,6 +29,11 @@ in the home folder and creating links only for files owned by this repository.
 Conflicting files are moved to
 `~/.local/state/omarchy-setup/backups/<timestamp>.<suffix>/` before deployment.
 
+`install_hunk.sh` installs Hunk through mise and configures the global
+`pager.diff` setting so `git diff` opens Hunk. It runs as part of
+`install_all.sh` and can be rerun independently. Use `git --no-pager diff`
+for plain output.
+
 ## Stow packages
 
 Shared packages are `bash`, `tmux`, `zellij`, `herdr`, `omarchy`, `hypr`,
