@@ -1,0 +1,11 @@
+{
+  "crush": "crush",
+  "gemini": "gemini",
+  "gh": "gh",
+  "copilot": "copilot",
+  "opencode": "opencode",
+  "pi": "pi",
+  "npm:playwright": "playwright",
+  "github:can1357/oh-my-pi": "omp",
+  "npm:@xai-official/grok": "grok"
+}

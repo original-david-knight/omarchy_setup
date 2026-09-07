@@ -6,6 +6,12 @@ repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 target_home=${OMARCHY_SETUP_TARGET:-$HOME}
 profile=${OMARCHY_SETUP_PROFILE:-auto}
 backup_root=""
+bar_only=0
+case ${1:-} in
+  --bar-only) bar_only=1 ;;
+  '') ;;
+  *) echo 'usage: stow_all.sh [--bar-only]' >&2; exit 2 ;;
+esac
 
 if [[ -z $target_home || $target_home != /* || $target_home == / ]]; then
   echo "Refusing to use an unsafe stow target: ${target_home:-<empty>}" >&2
@@ -97,7 +103,15 @@ backup_conflicts() {
     target="$target_home/$relative"
 
     [[ -e $target || -L $target ]] || continue
-    if [[ -e $target && $source -ef $target ]]; then
+    # Stow only owns relative symlinks. Absolute links and regular hardlinks
+    # still conflict even when -ef says they refer to the same source file.
+    if [[ -L $target && $(readlink -- "$target") != /* && $source -ef $target ]]; then
+      continue
+    fi
+    # An older deployment may link a whole directory into the package. In that
+    # case this path IS the source file, rather than a separate hardlink. Let
+    # Stow handle the directory link without moving files out of the repository.
+    if [[ ! -L $target && $source -ef $target && $(realpath -m -- "$target") == $(realpath -m -- "$source") ]]; then
       continue
     fi
 
@@ -206,7 +220,7 @@ configure_yazi() {
 
   # Only reload the live desktop when deploying to the current user's actual
   # home. Alternate targets are used for profile previews and setup tests.
-  if [[ $resolved_target_home == "$(realpath -m -- "$HOME")" ]]; then
+  if [[ ${OMARCHY_SETUP_ACTIVATE:-1} == 1 && $resolved_target_home == "$(realpath -m -- "$HOME")" ]]; then
     if command -v hyprctl >/dev/null 2>&1 && [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then
       hyprctl reload >/dev/null
       if [[ -n $(hyprctl configerrors) ]]; then
@@ -224,28 +238,43 @@ configure_yazi() {
 
 # Unstow mutually exclusive packages first so switching machine profiles does
 # not leave links from the previous profile behind.
-unstow_package ghostty
-unstow_package ghostty_big_screen
-unstow_package bin_laptop
+if (( ! bar_only )); then
+  unstow_package ghostty
+  unstow_package ghostty_big_screen
+  unstow_package bin_laptop
+fi
 unstow_package omarchy_desktop
 unstow_package omarchy_laptop
 
-shared_packages=(bash tmux zellij herdr omarchy hypr starship ssh bin vscode yazi)
+shared_packages=(omarchy)
+if (( ! bar_only )); then
+  shared_packages=(bash tmux zellij herdr omarchy hypr starship bin vscode yazi desktop)
+fi
 for package in "${shared_packages[@]}"; do
   stow_package "$package"
 done
 
 if [[ $profile == desktop ]]; then
-  stow_package ghostty_big_screen
+  if (( ! bar_only )); then stow_package ghostty_big_screen; fi
   stow_package omarchy_desktop
 else
-  stow_package ghostty
-  stow_package bin_laptop
+  if (( ! bar_only )); then
+    stow_package ghostty
+    stow_package bin_laptop
+  fi
   stow_package omarchy_laptop
 fi
 
 validate_bar_setup
-configure_yazi
+if (( ! bar_only )); then
+  python3 "$repo_dir/scripts/configure_ssh.py" --target "$target_home"
+  configure_yazi
+  HOME="$target_home" XDG_CONFIG_HOME="$target_home/.config" \
+    xdg-mime default google-chrome.desktop x-scheme-handler/http x-scheme-handler/https text/html
+  if [[ ${OMARCHY_SETUP_ACTIVATE:-1} == 1 && $resolved_target_home == "$(realpath -m -- "$HOME")" ]]; then
+    bash "$repo_dir/activate.sh"
+  fi
+fi
 
 echo "Stowed Omarchy setup for the $profile profile into $target_home."
 if [[ -n $backup_root ]]; then

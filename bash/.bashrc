@@ -115,7 +115,7 @@ fi
 
 # Add a new alias to your saved environment on the fly.
 aa() {
-  echo "alias $1='$2'" >>/root/.aliases-personal
+  echo "alias $1='$2'" >>"$HOME/.aliases-personal"
   source ~/.aliases.sh
   echo "'$1' is now aliased to '$2'"
 }
@@ -132,7 +132,7 @@ if [ -d "$HOME/.local/bin" ]; then
   PATH="$HOME/.local/bin:$PATH"
 fi
 
-PATH="$PATH:/home/david/.dotnet"
+PATH="$PATH:$HOME/.dotnet"
 PATH=$PATH:$HOME/bin
 PATH=$PATH:$HOME/.emacs.d/bin
 PATH=$PATH:$HOME/Android/Sdk/tools/bin
@@ -145,11 +145,11 @@ PATH=$PATH:$HOME/.local/flutter/bin
 # export JAVA_HOME="$(dirname $(dirname $(realpath $(which javac))))"
 # dart
 export PATH="$PATH":"$HOME/.pub-cache/bin"
-export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/opt/cuda/lib64:/opt/cuda/extras/CUPTI/lib64"
-export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/home/david/workspace/one/python_env/lib/python3.10/site-packages/tensorrt"
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:/opt/cuda/lib64:/opt/cuda/extras/CUPTI/lib64"
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:$HOME/workspace/one/python_env/lib/python3.10/site-packages/tensorrt"
 export CUDA_HOME=/opt/cuda
 
-export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/usr/lib/libcusparse_lt/lib64"
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:/usr/lib/libcusparse_lt/lib64"
 #
 export OPENSSL_LIB_DIR="/usr/lib/openssl-1.0"
 export OPENSSL_INCLUDE_DIR="/usr/include/openssl-1.0"
@@ -160,22 +160,22 @@ greet
 eval "$(starship init bash)"
 
 # The next line updates PATH for the Google Cloud SDK.
-if [ -f '/home/david/google-cloud-sdk/path.bash.inc' ]; then . '/home/david/google-cloud-sdk/path.bash.inc'; fi
+if [ -f "$HOME/google-cloud-sdk/path.bash.inc" ]; then . "$HOME/google-cloud-sdk/path.bash.inc"; fi
 
 # The next line enables shell command completion for gcloud.
-if [ -f '/home/david/google-cloud-sdk/completion.bash.inc' ]; then . '/home/david/google-cloud-sdk/completion.bash.inc'; fi
+if [ -f "$HOME/google-cloud-sdk/completion.bash.inc" ]; then . "$HOME/google-cloud-sdk/completion.bash.inc"; fi
 
 export CM_OUTPUT_CLIP=1
 
 export CHROME_EXECUTABLE=/usr/bin/google-chrome-stable
 
-export PATH="$PATH:/home/david/.dotnet/tools"
+export PATH="$PATH:$HOME/.dotnet/tools"
 
-export PATH="$PATH:/home/david/workspace/Rekordo/src/backend/cli/bin/Debug/net8.0"
+export PATH="$PATH:$HOME/workspace/Rekordo/src/backend/cli/bin/Debug/net8.0"
 
 export DOTNET_CLI_TELEMETRY_OPTOUT=true
 
-export DOTNET_ROOT=/home/$USER/.dotnet
+export DOTNET_ROOT=$HOME/.dotnet
 export PATH="$PATH:$DOTNET_ROOT:$DOTNET_ROOT/tools"
 if [ -f ~/bin/git-completion.bash ]; then
   . ~/bin/git-completion.bash
@@ -187,7 +187,7 @@ fi
 
 export PATH="$HOME/.local/bin:$PATH"
 
-export PATH="$PATH:/home/david/.config/.foundry/bin"
+export PATH="$PATH:$HOME/.config/.foundry/bin"
 export PATH="$PATH:$HOME/go/bin"
 
 # Prefer user-installed toolchains from the setup scripts.
@@ -200,7 +200,6 @@ claude() {
     command claude "$@"
     printf '\e[?1004l'
 }
-WAYLAND_DISPLAY=wayland-1
 
 # Load environment variables from ~/.env when it exists.
 if [ -f "$HOME/.env" ]; then
@@ -208,3 +207,7 @@ if [ -f "$HOME/.env" ]; then
   . "$HOME/.env"
   set +a
 fi
+
+export ANDROID_HOME="$HOME/Android/Sdk"
+export ANDROID_SDK_ROOT="$ANDROID_HOME"
+export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"

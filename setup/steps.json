@@ -1,0 +1,329 @@
+{
+  "version": 1,
+  "install": [
+    {
+      "id": "check_baseline",
+      "label": "Check the Omarchy installation",
+      "script": "check_baseline.sh",
+      "phase": "prepare",
+      "always": true
+    },
+    {
+      "id": "setup_sudo",
+      "label": "Configure administrator access",
+      "script": "setup_sudo.sh",
+      "phase": "prepare",
+      "always": true,
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "install_core",
+      "label": "Install core tools and desktop dependencies",
+      "script": "install_core.sh",
+      "inputs": [
+        "packages/core.txt",
+        "packages/aur.txt"
+      ],
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "setup_ssh",
+      "label": "Prepare your personal GitHub SSH key",
+      "script": "setup_ssh.sh",
+      "inputs": [
+        "scripts/configure_ssh.py"
+      ],
+      "required_paths": [
+        "{personal_key}",
+        "{personal_key}.pub"
+      ],
+      "phase": "prepare",
+      "always": true,
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "install_chrome",
+      "label": "Install Chrome",
+      "script": "install_chrome.sh",
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "install_yazi",
+      "label": "Install Yazi and the file picker",
+      "script": "install_yazi.sh",
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "install_brave",
+      "label": "Install Brave",
+      "script": "install_brave.sh",
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "install_stow",
+      "label": "Install configuration deployment tools",
+      "script": "install_stow.sh",
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "install_tmux",
+      "label": "Install tmux",
+      "script": "install_tmux.sh",
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "install_zellij",
+      "label": "Install Zellij",
+      "script": "install_zellij.sh",
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "install_herdr",
+      "label": "Install Herdr",
+      "script": "install_herdr.sh",
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "install_hunk",
+      "label": "Install Hunk",
+      "script": "install_hunk.sh",
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "install_listening",
+      "label": "Install Listening and media players",
+      "script": "install_listening.sh",
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "install_obsidian",
+      "label": "Install Obsidian",
+      "script": "install_obsidian.sh",
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "install_npm",
+      "label": "Install npm",
+      "script": "install_npm.sh",
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "install_claude_code",
+      "label": "Install Claude Code",
+      "script": "install_claude_code.sh",
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "install_codex",
+      "label": "Install Codex",
+      "script": "install_codex.sh",
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "install_agent_tools",
+      "label": "Install the other agent tools",
+      "script": "install_agent_tools.sh",
+      "inputs": [
+        "packages/agent-tools.json"
+      ],
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "install_vscode",
+      "label": "Install VS Code",
+      "script": "install_vscode.sh",
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "install_vscode_extensions",
+      "label": "Configure VS Code extensions",
+      "script": "install_vscode_extensions.sh",
+      "inputs": [
+        "vscode/extensions.txt"
+      ],
+      "requires": [
+        "public.check_baseline",
+        "public.install_vscode"
+      ]
+    },
+    {
+      "id": "install_cursor",
+      "label": "Install Cursor",
+      "script": "install_cursor.sh",
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "install_dotnet",
+      "label": "Install the .NET SDK",
+      "script": "install_dotnet.sh",
+      "inputs": [
+        "toolchains.json"
+      ],
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "install_asteroids",
+      "label": "Build Asteroids",
+      "script": "install_asteroids.sh",
+      "inputs": [
+        "toolchains.json"
+      ],
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "setup_bloothtooth",
+      "label": "Enable Bluetooth",
+      "script": "setup_bloothtooth.sh",
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "install_alsa_utils",
+      "label": "Install audio utilities",
+      "script": "install_alsa_utils.sh",
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "install_mouse_fix",
+      "label": "Configure mouse recovery",
+      "script": "install_mouse_fix.sh",
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "install_postresql",
+      "label": "Install PostgreSQL",
+      "script": "install_postresql.sh",
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "install_slack",
+      "label": "Install Slack",
+      "script": "install_slack.sh",
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "install_discord",
+      "label": "Install Discord",
+      "script": "install_discord.sh",
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "install_voice",
+      "label": "Install the voice input model",
+      "script": "install_voice.sh",
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "install_services",
+      "label": "Enable desktop support services",
+      "script": "install_services.sh",
+      "requires": [
+        "public.check_baseline"
+      ]
+    }
+  ],
+  "configure": [
+    {
+      "id": "configuration",
+      "label": "Apply the desktop profile and start its services",
+      "script": "stow_all.sh",
+      "inputs": [
+        "stow_all.sh",
+        "activate.sh",
+        "scripts/configure_ssh.py",
+        "bash",
+        "bin",
+        "hypr",
+        "omarchy",
+        "omarchy_desktop",
+        "omarchy_laptop",
+        "desktop",
+        "ghostty",
+        "ghostty_big_screen",
+        "yazi",
+        "tmux",
+        "zellij",
+        "herdr",
+        "starship",
+        "bin_laptop",
+        "vscode"
+      ],
+      "profile_sensitive": true,
+      "instructions": "Resolve the error above and retry. If it reports no user systemd session, log into the desktop and run ./setup.sh again.",
+      "required_paths": [
+        "{home}/.config/omarchy/shell.json"
+      ],
+      "requires": [
+        "public.check_baseline"
+      ]
+    },
+    {
+      "id": "public_verify",
+      "label": "Check the public setup",
+      "kind": "verify",
+      "script": "verify.sh",
+      "args": [
+        "--json"
+      ],
+      "inputs": [
+        "scripts/verify_setup.py"
+      ],
+      "always": true
+    }
+  ]
+}

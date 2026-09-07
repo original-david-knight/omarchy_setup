@@ -7,13 +7,17 @@ set -euo pipefail
 repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 cd "$repo_dir"
 
-git remote remove origin 2>/dev/null || true
-git remote add origin git@github.com:original-david-knight/omarchy_setup.git
+if git remote get-url origin >/dev/null 2>&1; then
+  git remote set-url origin git@github.com:original-david-knight/omarchy_setup.git
+else
+  git remote add origin git@github.com:original-david-knight/omarchy_setup.git
+fi
 git fetch -q origin
 git branch -q --set-upstream-to=origin/main main 2>/dev/null || true
 
 ./setup_workspace.sh
 
+if [[ ${OMARCHY_SETUP_WIZARD:-0} != 1 ]]; then
 cat <<'MSG'
 
 Next: the private setup, which carries the secrets this repo cannot.
@@ -21,3 +25,4 @@ Next: the private setup, which carries the secrets this repo cannot.
   cd ~/workspace/omarchy-setup-private && ./go.sh
 
 MSG
+fi

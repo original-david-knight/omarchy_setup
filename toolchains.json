@@ -1,0 +1,5 @@
+{
+  "baseline": "Omarchy 4.x / x86_64",
+  "dotnet": "8.0.416",
+  "asteroids_revision": "07fb141348ec2e6462e67c1f32d78091971705f4"
+}

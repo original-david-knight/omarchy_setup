@@ -1,0 +1,4 @@
+# AUR-only dependencies; separate from repository packages.
+gcalcli
+vopono
+google-cloud-cli
