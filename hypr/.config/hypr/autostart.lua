@@ -11,6 +11,11 @@ end
 launch_if_present(home .. "/bin/auto-touchpad-toggle")
 launch_if_present(home .. "/.local/bin/lifedash-open")
 
+-- Keep middle-click selection paste working across Chrome/XWayland and Wayland.
+if o.cmd_present(home .. "/bin/primary-selection-sync") then
+  o.launch_on_start("systemctl --user start primary-selection-sync.service")
+end
+
 -- Recover the center OLED when its high-bandwidth DP link stalls during boot.
 local center_monitor_relink = home .. "/bin/relink-center-monitor"
 if o.cmd_present(center_monitor_relink) then

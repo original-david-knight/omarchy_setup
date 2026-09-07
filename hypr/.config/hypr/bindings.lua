@@ -41,7 +41,10 @@ o.bind(
 o.bind("SUPER + A", "Asteroids", { launch = home .. "/.cargo/bin/asteroids" })
 o.bind("SUPER + SHIFT + T", "Activity", { tui = "btop" })
 o.bind("SUPER + D", "Discord", { launch = "discord" })
-o.bind("SUPER + M", "Music", home .. "/bin/toggle-music")
+hl.unbind("SUPER + M") -- Was: YouTube Music special workspace.
+o.bind("SUPER + M", "Listening", "omarchy-shell shell toggle david.podcasts")
+hl.unbind("SUPER + SHIFT + M") -- Was: Spotify launcher/focus.
+o.bind("SUPER + SHIFT + M", "Spotify workspace", home .. "/.config/omarchy/plugins/david.podcasts/spotify-window toggle")
 
 hl.unbind("SUPER + S") -- Was: Quattro scratchpad.
 o.bind("SUPER + S", "Slack + Obsidian", home .. "/bin/toggle-slack-obsidian")

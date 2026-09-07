@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+"""Read the connected playlist library; play only in the local Spotify app."""
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+
+BASE = Path(__file__).resolve().parent
+PLAYLIST_URI = re.compile(r"spotify:playlist:[A-Za-z0-9]{22}\Z")
+BUS = ["busctl", "--user", "--timeout=3"]
+PLAYER = ["org.mpris.MediaPlayer2.spotify", "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2.Player"]
+
+
+def playlists():
+    config_dir = Path(os.environ.get("EVERYTHING_AGENT_CONFIG_DIR", str(Path.home() / ".config/everything-agent")))
+    try:
+        config = json.loads((config_dir / "config.json").read_text())
+        url = config["service_url"].rstrip("/") + "/api/spotify/playlists"
+        token = config["token"]
+    except (OSError, KeyError, ValueError) as error:
+        raise RuntimeError("Connect Spotify in Everything settings to load your playlists.") from error
+    request = urllib.request.Request(url, headers={"Authorization": "Bearer " + token})
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            data = json.load(response)
+    except urllib.error.HTTPError as error:
+        if error.code == 412:
+            raise RuntimeError("Reconnect Spotify in Everything settings, then refresh your playlists.") from error
+        if error.code in (401, 403):
+            raise RuntimeError("Everything could not authorize your playlist library. Check its desktop connection.") from error
+        raise RuntimeError("Your playlist library is temporarily unavailable. Try refreshing in a moment.") from error
+    except (urllib.error.URLError, TimeoutError, ValueError) as error:
+        raise RuntimeError("Could not reach your playlist library. Check your connection and try again.") from error
+    items = data.get("playlists") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        raise RuntimeError("The playlist library returned an unexpected response.")
+    result, seen = [], set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        uri = item.get("uri", "")
+        if not isinstance(uri, str) or not PLAYLIST_URI.fullmatch(uri) or uri in seen:
+            continue
+        seen.add(uri)
+        result.append({key: item.get(key, "") for key in
+                       ("uri", "name", "artwork_url", "owner", "tracks_total")})
+    return {"playlists": result}
+
+
+def play(uri):
+    if not PLAYLIST_URI.fullmatch(uri):
+        raise ValueError("Choose a valid Spotify playlist.")
+    subprocess.run([str(BASE / "spotify-window"), "start"], check=True, capture_output=True, timeout=20)
+    # The window can appear before Spotify has registered its control service.
+    for _ in range(30):
+        ready = subprocess.run(BUS + ["get-property"] + PLAYER + ["CanControl"],
+                               capture_output=True, text=True, timeout=4)
+        if ready.returncode == 0 and ready.stdout.strip() == "b true":
+            break
+        time.sleep(0.2)
+    else:
+        raise RuntimeError("Spotify is still starting. Try the playlist again in a moment.")
+    # MPRIS addresses this computer's app explicitly, so another Spotify
+    # Connect device (phone, browser, speaker) cannot receive this command.
+    subprocess.run(BUS + ["call"] + PLAYER + ["OpenUri", "s", uri],
+                   check=True, capture_output=True, timeout=5)
+    return {"uri": uri}
+
+
+if __name__ == "__main__":
+    try:
+        args = sys.argv[1:]
+        if args in ([], ["list"]):
+            result = playlists()
+        elif len(args) == 2 and args[0] == "play":
+            result = play(args[1])
+        else:
+            raise ValueError("Usage: spotify-library [list | play spotify:playlist:…]")
+        print(json.dumps(result))
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+        if isinstance(error, subprocess.SubprocessError):
+            print("Spotify could not start this playlist. Check that you are signed in and try again.", file=sys.stderr)
+        else:
+            print(error, file=sys.stderr)
+        sys.exit(1)

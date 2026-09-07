@@ -1,0 +1,13 @@
+[Unit]
+Description=Synchronize text PRIMARY selections between XWayland and Wayland
+After=graphical-session-pre.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=%h/bin/primary-selection-sync
+Restart=always
+RestartSec=2
+TimeoutStopSec=5
+
+[Install]
+WantedBy=graphical-session.target

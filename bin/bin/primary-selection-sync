@@ -1,0 +1,239 @@
+#!/usr/bin/python
+"""Keep XWayland and Wayland text PRIMARY selections in sync on Hyprland.
+
+Hyprland 0.56 drops currentPrimarySelection when the pointer's client has no
+primary data device (XWayland), and its X11 TARGETS reply omits PRIMARY types.
+Keep an independent X11 owner and restore Wayland PRIMARY after that loss.
+CLIPBOARD is never accessed; selected text stays in memory.
+"""
+
+import json
+import os
+import sys
+
+if sys.argv[1:] == ["--emit"]:
+    if os.environ.get("CLIPBOARD_STATE") not in ("nil", "clear"):
+        text = sys.stdin.read(8 * 1024 * 1024 + 1)
+        if text and len(text) <= 8 * 1024 * 1024:
+            print(json.dumps(text), flush=True)
+    raise SystemExit
+
+import fcntl
+import ctypes
+import signal
+import subprocess
+
+os.environ["GDK_BACKEND"] = "x11"
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+from gi.repository import Gdk, GLib, Gtk
+
+
+class Bridge:
+    def __init__(self):
+        Gtk.init([])
+        self.display = Gdk.Display.get_default()
+        if self.display is None:
+            raise RuntimeError("XWayland display is unavailable")
+        # Use the X11 text provider verified by an actual Chrome middle paste,
+        # in addition to independent clipboard reads.
+        self.primary = Gtk.Clipboard.get(Gdk.SELECTION_PRIMARY)
+        self.xlib = ctypes.CDLL("libX11.so.6")
+        self.xlib.XOpenDisplay.argtypes = [ctypes.c_char_p]
+        self.xlib.XOpenDisplay.restype = ctypes.c_void_p
+        self.xlib.XGetSelectionOwner.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+        self.xlib.XGetSelectionOwner.restype = ctypes.c_ulong
+        self.xlib.XCloseDisplay.argtypes = [ctypes.c_void_p]
+        self.xdisplay = self.xlib.XOpenDisplay(None)
+        if not self.xdisplay:
+            raise RuntimeError("Cannot connect to XWayland")
+        self.xowner = None
+        self.read_in_flight = False
+        self.request_id = 0
+        self.text = None
+        self.writer = None
+        self.pending = None
+        self.generation = 0
+        self.counts = {"x11_read": 0, "wayland_read": 0, "x11_write": 0, "wayland_write": 0}
+        self.stream = b""
+        self.loop = GLib.MainLoop()
+        self.watcher = subprocess.Popen(
+            ["wl-paste", "--primary", "--type", "text", "--watch",
+             sys.executable, os.path.realpath(__file__), "--emit"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        )
+        os.set_blocking(self.watcher.stdout.fileno(), False)
+        GLib.io_add_watch(self.watcher.stdout.fileno(), GLib.IO_IN | GLib.IO_HUP, self.wayland_changed)
+        self.primary.connect("owner-change", self.x11_changed)
+        self.x11_changed(self.primary)
+        GLib.timeout_add(100, self.restore_wayland)
+
+    def x11_is_local(self):
+        return self.xowner is not None and self.xlib.XGetSelectionOwner(self.xdisplay, 1) == self.xowner
+
+    def publish_x11(self):
+        self.counts["x11_write"] += 1
+        self.primary.set_text(self.text, -1)
+        self.display.sync()
+        self.xowner = self.xlib.XGetSelectionOwner(self.xdisplay, 1)
+
+    def publish_wayland(self):
+        self.counts["wayland_write"] += 1
+        # Own each child explicitly: a lost compositor selection does not
+        # always cancel the old source, so wl-copy's normal daemon mode leaks.
+        if self.writer is not None:
+            if self.writer.poll() is None:
+                self.writer.terminate()
+            self.writer.wait(timeout=2)
+        self.writer = subprocess.Popen(
+            ["wl-copy", "--primary", "--foreground", "--type", "text/plain;charset=utf-8"],
+            stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        self.writer.stdin.write(self.text.encode())
+        self.writer.stdin.close()
+
+    def x11_changed(self, *_args):
+        self.generation += 1
+        if self.pending is not None:
+            GLib.source_remove(self.pending)
+        self.pending = GLib.timeout_add(30, self.read_x11)
+
+    def read_x11(self):
+        self.pending = None
+        if self.x11_is_local() or self.read_in_flight:
+            return False
+        generation = self.generation
+        self.request_id += 1
+        request_id = self.request_id
+        self.read_in_flight = True
+
+        def expired():
+            if request_id == self.request_id:
+                self.request_id += 1
+                self.read_in_flight = False
+                if generation == self.generation and self.text is not None:
+                    self.publish_x11()
+            return False
+
+        timeout = GLib.timeout_add(1000, expired)
+
+        def received(_clipboard, text, _data):
+            if request_id != self.request_id:
+                return
+            GLib.source_remove(timeout)
+            self.read_in_flight = False
+            if generation != self.generation:
+                return
+            if not text:
+                if self.text is not None:
+                    self.publish_x11()
+                return
+            if text == self.text:
+                return
+            if len(text) > 8 * 1024 * 1024:
+                return
+            self.text = text
+            self.counts["x11_read"] += 1
+            self.publish_wayland()
+            self.publish_x11()
+
+        self.primary.request_text(received, None)
+        return False
+
+    def wayland_changed(self, fd, condition):
+        data = os.read(fd, 65536)
+        if not data:
+            self.loop.quit()
+            return False
+        self.stream += data
+        while b"\n" in self.stream:
+            line, self.stream = self.stream.split(b"\n", 1)
+            text = json.loads(line)
+            if text:
+                self.counts["wayland_read"] += 1
+                changed = text != self.text
+                self.text = text
+                if changed or not self.x11_is_local():
+                    self.publish_x11()
+        return True
+
+    def restore_wayland(self):
+        if self.text is None:
+            return True
+        # Do not continually fight the compositor while pointing at Chrome.
+        # Restore only over a visible native window, where PRIMARY survives.
+        pointer_backend = '''local p = hl.get_cursor_pos()
+local m = hl.get_monitor_at_cursor()
+if not m then return "none" end
+local ws = m.active_special_workspace or m.active_workspace
+local function contains(w)
+  if not w or w.hidden or w.monitor.id ~= m.id then return false end
+  if not w.pinned and (not w.workspace or w.workspace.id ~= ws.id) then return false end
+  local a, s = w.at, w.size
+  return p.x >= a.x and p.y >= a.y and p.x < a.x+s.x and p.y < a.y+s.y
+end
+local active = hl.get_active_window()
+if contains(active) then return active.xwayland and "x11" or "wayland" end
+for _, w in ipairs(hl.get_windows()) do
+  if contains(w) then return w.xwayland and "x11" or "wayland" end
+end
+return "none"'''
+        try:
+            backend = subprocess.check_output(["hyprctl", "repl", pointer_backend], timeout=1).strip()
+            if backend == b"x11":
+                available = subprocess.run(
+                    ["wl-paste", "--primary", "--list-types"], timeout=1,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                )
+                if available.returncode == 0:
+                    # Otherwise Hyprland can reclaim X11 PRIMARY again when
+                    # Chrome receives the click, after we already repaired it.
+                    # Retain the text here and return Wayland ownership when
+                    # the pointer moves back to a native window.
+                    subprocess.run(
+                        ["wl-copy", "--primary", "--clear"], timeout=1, check=True,
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    )
+                    self.publish_x11()
+                if not self.x11_is_local() and self.pending is None:
+                    self.read_x11()
+                return True
+            if backend != b"wayland":
+                return True
+            available = subprocess.run(
+                ["wl-paste", "--primary", "--list-types"], timeout=1,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            if available.returncode != 0:
+                self.publish_wayland()
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
+            pass
+        return True
+
+    def run(self):
+        from gi.repository import GLibUnix
+        GLibUnix.signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, lambda: (self.loop.quit(), False)[1])
+        def status():
+            print("PRIMARY sync status:", {"cached_characters": len(self.text or ""),
+                  "x11_local": self.x11_is_local(), **self.counts}, flush=True)
+            return True
+        GLibUnix.signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR1, status)
+        try:
+            self.loop.run()
+        finally:
+            for process in (self.watcher, self.writer):
+                if process is not None:
+                    if process.poll() is None:
+                        process.terminate()
+                    process.wait(timeout=2)
+            self.xlib.XCloseDisplay(self.xdisplay)
+
+
+lock = open(os.path.join(os.environ["XDG_RUNTIME_DIR"], "primary-selection-sync.lock"), "w")
+try:
+    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    raise SystemExit
+Bridge().run()

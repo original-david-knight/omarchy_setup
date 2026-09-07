@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
+import Quickshell.Services.Mpris
 import qs.Commons
 import qs.Ui
 
@@ -28,6 +29,119 @@ Panel {
   property real expectedPosition: 0
   property var localProgress: ({})
   property var saveQueue: []
+  property var controlQueue: []
+  property int lastPlaybackSource: -1
+
+  property int sourceTab: 0
+  property string noiseError: ""
+  property var sounds: []
+  property var noiseState: ({})
+  property var noiseQueue: []
+  property string lastNoise: "coast"
+  property real spotifyPosition: 0
+  property var playlists: []
+  property string playlistError: ""
+  property string selectedPlaylistUri: ""
+  property string pendingPlaylistUri: ""
+  property real playlistsUpdatedAt: 0
+  readonly property bool playlistsLoading: playlistFetch.running
+  readonly property bool playlistStarting: playlistPlay.running
+  readonly property string libraryHelper: Quickshell.env("HOME") + "/.config/omarchy/plugins/david.podcasts/spotify-library"
+  readonly property var spotify: {
+    var players = Mpris.players.values
+    for (var i = 0; i < players.length; i++) {
+      var p = players[i]
+      if (String(p.desktopEntry).toLowerCase() === "spotify" || String(p.identity).toLowerCase() === "spotify"
+          || String(p.dbusName).indexOf("org.mpris.MediaPlayer2.spotify") === 0) return p
+    }
+    return null
+  }
+  readonly property bool spotifyPlaying: spotify !== null && spotify.isPlaying
+  readonly property bool noisePlaying: sounds.some(function(s) { return soundState(s.id).playing })
+  readonly property bool noiseStarting: sounds.some(function(s) { var state = soundState(s.id); return state.loading && state.requested })
+  readonly property bool anythingPlaying: playing || switchingEpisode || spotifyPlaying || noisePlaying || noiseStarting
+  readonly property color sourceColor: sourceTab === 0 ? "#9bdfb1" : sourceTab === 1 ? "#c8b8ed" : "#9dcfd5"
+  readonly property var displayEntry: currentEntry || (entries.length ? entries[0] : null)
+  readonly property string nowTitle: spotifyPlaying ? (spotify.trackTitle || "Spotify")
+    : playing && currentEntry ? currentEntry.title : noisePlaying ? "Ambient mix" : "Listening"
+  readonly property string nowArt: spotifyPlaying ? spotify.trackArtUrl
+    : playing && currentEntry ? String(currentEntry.artwork_url || "")
+    : noisePlaying ? activeNoiseArt() : ""
+  readonly property string noiseHelper: Quickshell.env("HOME") + "/.config/omarchy/plugins/david.podcasts/mynoise"
+  readonly property bool compactBar: (bar && bar.vertical) || (root.QsWindow.window !== null
+    && root.QsWindow.window.screen !== null && root.QsWindow.window.screen.width < 1920)
+
+  function soundState(id) {
+    return noiseState[id] || { playing: false, loading: false, volume: 0.35, error: "" }
+  }
+  function activeNoiseArt() {
+    for (var i = 0; i < sounds.length; i++)
+      if (soundState(sounds[i].id).playing) return sounds[i].artwork
+    return ""
+  }
+  function noiseCommand(args) {
+    noiseError = ""
+    if (args[0] === "play" || args[0] === "toggle") { lastNoise = args[1]; lastPlaybackSource = 2 }
+    noiseQueue = noiseQueue.concat([args])
+    pumpNoise()
+  }
+  function pumpNoise() {
+    if (noiseControl.running || !noiseQueue.length) return
+    noiseControl.command = [noiseHelper].concat(noiseQueue[0])
+    noiseQueue = noiseQueue.slice(1)
+    noiseControl.running = true
+  }
+  function consumeNoise(raw) {
+    try { noiseState = JSON.parse(raw).sounds || ({}) }
+    catch (error) { noiseError = "The soundscape player could not be read" }
+  }
+  function openSpotify(background) {
+    if (!background) root.close()
+    Quickshell.execDetached([Quickshell.env("HOME") + "/.config/omarchy/plugins/david.podcasts/spotify-window",
+      background ? "start" : "show"])
+  }
+  function refreshPlaylists(force) {
+    if (playlistFetch.running || (!force && Date.now() - playlistsUpdatedAt < 300000)) return
+    playlistError = ""
+    playlistFetch.running = true
+  }
+  function playPlaylist(playlist) {
+    if (playlistPlay.running) return
+    playlistError = ""
+    lastPlaybackSource = 0
+    pendingPlaylistUri = playlist.uri
+    if (playing || switchingEpisode) { runControl(["pause"]); saveProgress(false) }
+    playlistPlay.command = [libraryHelper, "play", playlist.uri]
+    playlistPlay.running = true
+  }
+  function toggleSpotify() {
+    lastPlaybackSource = 0
+    if (!spotify) { openSpotify(true); return }
+    if (spotify.canTogglePlaying) {
+      if (!spotify.isPlaying && (playing || switchingEpisode)) { runControl(["pause"]); saveProgress(false) }
+      spotify.togglePlaying()
+    }
+  }
+  function toggleSelected() {
+    if (sourceTab === 0) toggleSpotify()
+    else if (sourceTab === 1) togglePlayback()
+    else if (noisePlaying || noiseStarting) noiseCommand(["pause-all"])
+    else noiseCommand(["toggle", lastNoise])
+  }
+  function toggleActive() {
+    if (spotifyPlaying) toggleSpotify()
+    else if (playing) togglePlayback()
+    else if (noisePlaying || noiseStarting) { lastPlaybackSource = 2; noiseCommand(["pause-all"]) }
+    else if (lastPlaybackSource === 0) toggleSpotify()
+    else if (lastPlaybackSource === 1) togglePlayback()
+    else if (lastPlaybackSource === 2) noiseCommand(["toggle", lastNoise])
+    else toggleSelected()
+  }
+  function pauseAll() {
+    if (spotify && spotify.canPause) spotify.pause()
+    if (playing || switchingEpisode) { runControl(["pause"]); saveProgress(false) }
+    noiseCommand(["pause-all"])
+  }
 
   readonly property var entries: queueData && Array.isArray(queueData.entries) ? queueData.entries : []
   readonly property var currentEntry: currentIndex >= 0 && currentIndex < entries.length ? entries[currentIndex] : null
@@ -81,7 +195,11 @@ Panel {
   }
 
   function runControl(args) {
-    if (controlProcess.running) return false
+    if (controlProcess.running) {
+      if (args[0] !== "pause") return false
+      controlQueue = [["pause"]]
+      return true
+    }
     controlProcess.command = [helper].concat(args)
     controlProcess.running = true
     return true
@@ -125,16 +243,20 @@ Panel {
   }
 
   function playEpisode(index, skipOutgoingSave) {
+    if (controlProcess.running) return
     if (index < 0 || index >= entries.length) return
+    lastPlaybackSource = 1
     var entry = entries[index]
     if (!entry.enclosure_url) {
       errorText = "This episode has no playable audio URL"
       return
     }
     if (currentIndex === index && !idle) {
+      if (!playing && spotify && spotify.canPause) spotify.pause()
       runControl(["toggle"])
       return
     }
+    if (spotify && spotify.canPause) spotify.pause()
     var savedPosition = savedPositionFor(entry)
     var savedDuration = Number(entry.duration_seconds || 0)
     // Replaying an item that was previously completed should start from the
@@ -202,6 +324,8 @@ Panel {
   }
 
   function togglePlayback() {
+    lastPlaybackSource = 1
+    if (!playing && spotify && spotify.canPause) spotify.pause()
     if (!currentEntry) {
       if (entries.length) playEpisode(0)
       return
@@ -306,7 +430,88 @@ Panel {
 
   onOpenedChanged: if (opened) {
     refresh()
+    if (sourceTab === 0) refreshPlaylists(false)
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+  onSourceTabChanged: if (opened && sourceTab === 0) refreshPlaylists(false)
+
+  Process {
+    id: playlistFetch
+    command: [root.libraryHelper, "list"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        if (!text.trim()) return
+        try {
+          root.playlists = JSON.parse(text).playlists || []
+          root.playlistsUpdatedAt = Date.now()
+        } catch (error) { root.playlistError = "Your playlists could not be read" }
+      }
+    }
+    stderr: StdioCollector { onStreamFinished: if (text.trim()) root.playlistError = text.trim() }
+    onExited: function(code) {
+      if (code !== 0 && !root.playlistError) root.playlistError = "Your playlist library is unavailable. Try refreshing."
+    }
+  }
+  Process {
+    id: playlistPlay
+    stdout: StdioCollector {
+      onStreamFinished: {
+        if (!text.trim()) return
+        try { root.selectedPlaylistUri = JSON.parse(text).uri || "" }
+        catch (error) { root.playlistError = "Spotify did not confirm the playlist selection" }
+      }
+    }
+    stderr: StdioCollector { onStreamFinished: if (text.trim()) root.playlistError = text.trim() }
+    onExited: function(code) {
+      root.pendingPlaylistUri = ""
+      if (code !== 0 && !root.playlistError) root.playlistError = "Spotify could not start this playlist. Try again."
+    }
+  }
+
+  FileView {
+    path: Quickshell.env("HOME") + "/.config/omarchy/plugins/david.podcasts/soundscapes.json"
+    onLoaded: {
+      try { root.sounds = JSON.parse(text()) }
+      catch (error) { root.noiseError = "Soundscape list could not be read" }
+    }
+  }
+  IpcHandler {
+    target: "david.listening"
+    function show(source: string): void {
+      var index = ["spotify", "podcasts", "mynoise"].indexOf(source)
+      if (index >= 0) root.sourceTab = index
+      root.open()
+    }
+    function playPause(): void { root.toggleActive() }
+    function pauseAll(): void { root.pauseAll() }
+    function status(): string {
+      return JSON.stringify({source: ["spotify", "podcasts", "mynoise"][root.sourceTab],
+        spotify: root.spotify ? {title: root.spotify.trackTitle, artist: root.spotify.trackArtist,
+          artwork: root.spotify.trackArtUrl, playing: root.spotifyPlaying} : null,
+        playlists: {count: root.playlists.length, selected: root.selectedPlaylistUri, error: root.playlistError},
+        podcasts: {count: root.entries.length, playing: root.playing}, sounds: root.noiseState})
+    }
+  }
+  Process {
+    id: noiseControl
+    stdout: StdioCollector { onStreamFinished: root.consumeNoise(text) }
+    stderr: StdioCollector { onStreamFinished: if (text.trim()) root.noiseError = text.trim() }
+    onExited: Qt.callLater(function() { root.pumpNoise() })
+  }
+  Process {
+    id: noiseStatus
+    command: [root.noiseHelper, "status"]
+    stdout: StdioCollector { onStreamFinished: root.consumeNoise(text) }
+  }
+  Timer {
+    interval: root.opened ? 1000 : 3000
+    running: true
+    repeat: true
+    triggeredOnStart: true
+    onTriggered: {
+      if (!noiseStatus.running && !noiseControl.running) noiseStatus.running = true
+      if (root.spotify && root.opened) root.spotifyPosition = root.spotify.position
+    }
   }
 
   Process {
@@ -332,6 +537,19 @@ Panel {
     stderr: StdioCollector {
       waitForEnd: true
       onStreamFinished: if (String(text || "").trim()) root.errorText = String(text).trim()
+    }
+    onExited: function(exitCode) {
+      if (exitCode !== 0) {
+        root.switchingEpisode = false
+        root.paused = true
+        root.idle = true
+      }
+      Qt.callLater(function() {
+        if (!root.controlQueue.length) return
+        var args = root.controlQueue[0]
+        root.controlQueue = root.controlQueue.slice(1)
+        root.runControl(args)
+      })
     }
   }
 
@@ -390,20 +608,40 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: root.playing ? "▶" : "🎧"
-    tooltipText: "Podcasts · " + root.entries.length + " queued" +
-      (root.currentEntry ? "\n" + (root.playing ? "Playing: " : "Paused: ") + root.currentEntry.title : "")
-    active: root.errorText !== ""
-    fontSize: Style.font.bodySmall
-    horizontalMargin: 7
-
-    onPressed: function(buttonCode) {
-      if (buttonCode === Qt.RightButton)
-        root.openEverything("/podcasts/queue")
-      else if (buttonCode === Qt.MiddleButton && root.currentEntry)
-        root.togglePlayback()
-      else
-        root.toggle()
+    text: "♫"
+    labelVisible: false
+    fixedWidth: root.compactBar ? Style.space(34) : Style.space(root.anythingPlaying ? 158 : 115)
+    tooltipText: root.nowTitle + "\nSpotify · Podcasts · myNoise\nMiddle-click: play/pause · Right-click: pause all"
+    onPressed: function(code) {
+      if (code === Qt.MiddleButton) root.toggleActive()
+      else if (code === Qt.RightButton) root.pauseAll()
+      else root.toggle()
+    }
+    Row {
+      anchors.centerIn: parent
+      spacing: Style.space(7)
+      Artwork {
+        width: Style.space(21); height: width; radius: Style.space(5)
+        source: root.nowArt
+        tint: root.anythingPlaying ? "#9bdfb1" : root.foreground
+      }
+      Text {
+        visible: !root.compactBar
+        anchors.verticalCenter: parent.verticalCenter
+        width: Style.space(root.anythingPlaying ? 107 : 65)
+        text: root.nowTitle
+        textFormat: Text.PlainText
+        color: root.foreground
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.bodySmall
+        elide: Text.ElideRight
+      }
+      Rectangle {
+        visible: root.anythingPlaying && !root.compactBar
+        anchors.verticalCenter: parent.verticalCenter
+        width: Style.space(4); height: width; radius: width / 2
+        color: "#9bdfb1"
+      }
     }
   }
 
@@ -414,327 +652,31 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(520))
-    contentHeight: panel.fittedContentHeight(contentColumn.implicitHeight, Style.space(700))
+    contentWidth: panel.fittedContentWidth(Style.space(460))
+    contentHeight: panel.fittedContentHeight(listening.implicitHeight, Style.space(root.sourceTab === 0 ? 840 : 740))
 
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
       onCloseRequested: root.close()
-      onTabRequested: function(direction) { root.switchPanel(direction) }
-      onActivateRequested: {
-        root.togglePlayback()
-      }
+      onTabRequested: function(direction) { root.sourceTab = (root.sourceTab + direction + 3) % 3 }
+      onActivateRequested: root.toggleSelected()
       onMoveRequested: function(dx, dy) {
-        if (dy !== 0)
-          scroll.contentY = Math.max(0, Math.min(scroll.contentY + dy * Style.space(56),
-                                                Math.max(0, scroll.contentHeight - scroll.height)))
+        if (dx) root.sourceTab = (root.sourceTab + dx + 3) % 3
+        else listening.scrollBy(dy * Style.space(68))
       }
       onTextKey: function(text) {
-        if (text === "r" || text === "R") root.refresh()
+        if (text === "r" || text === "R") {
+          if (root.sourceTab === 0) root.refreshPlaylists(true)
+          else root.refresh()
+        }
         else if (text === "e" || text === "E") root.openEverything("/podcasts/queue")
-        else if (text === " ") {
-          root.togglePlayback()
-        }
+        else if (text === "1" || text === "2" || text === "3") root.sourceTab = Number(text) - 1
       }
-
-      Flickable {
-        id: scroll
+      ListeningView {
+        id: listening
         anchors.fill: parent
-        contentWidth: width
-        contentHeight: contentColumn.implicitHeight
-        clip: true
-        boundsBehavior: Flickable.StopAtBounds
-        flickableDirection: Flickable.VerticalFlick
-        interactive: contentHeight > height
-        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-
-        Column {
-          id: contentColumn
-          width: scroll.width
-          spacing: Style.space(12)
-
-          Row {
-            width: parent.width
-            Text {
-              id: title
-              text: "Podcast queue"
-              color: root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.title
-              font.bold: true
-            }
-            Row {
-              width: parent.width - x
-              anchors.baseline: title.baseline
-              layoutDirection: Qt.RightToLeft
-              spacing: Style.space(14)
-              Text {
-                text: "Manage shows ↗"
-                color: Color.accent
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                MouseArea {
-                  anchors.fill: parent
-                  cursorShape: Qt.PointingHandCursor
-                  onClicked: root.openEverything("/podcasts/subscriptions")
-                }
-              }
-              Text {
-                text: "Edit queue ↗"
-                color: Color.accent
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                MouseArea {
-                  anchors.fill: parent
-                  cursorShape: Qt.PointingHandCursor
-                  onClicked: root.openEverything("/podcasts/queue")
-                }
-              }
-            }
-          }
-
-          Text {
-            visible: root.loading
-            width: parent.width
-            text: "Refreshing…"
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-          }
-
-          Text {
-            visible: root.errorText !== ""
-            width: parent.width
-            text: root.errorText
-            color: Color.urgent
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-            wrapMode: Text.WordWrap
-          }
-
-          Rectangle {
-            visible: root.currentEntry !== null
-            width: parent.width
-            implicitHeight: playerColumn.implicitHeight + Style.space(22)
-            radius: Style.cornerRadius
-            color: Style.normalFillFor(root.foreground, Color.accent)
-            border.width: 1
-            border.color: Color.popups.border
-
-            Column {
-              id: playerColumn
-              anchors.left: parent.left
-              anchors.right: parent.right
-              anchors.verticalCenter: parent.verticalCenter
-              anchors.margins: Style.space(12)
-              spacing: Style.space(8)
-
-              Text {
-                width: parent.width
-                text: root.currentEntry ? root.currentEntry.title : ""
-                color: root.foreground
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.body
-                font.bold: true
-                elide: Text.ElideRight
-              }
-              Text {
-                width: parent.width
-                text: root.currentEntry ? root.currentEntry.show_title : ""
-                color: root.dim
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                elide: Text.ElideRight
-              }
-
-              Item {
-                id: seekTrack
-                width: parent.width
-                height: Style.space(14)
-
-                Rectangle {
-                  anchors.left: parent.left
-                  anchors.right: parent.right
-                  anchors.verticalCenter: parent.verticalCenter
-                  height: Style.space(4)
-                  radius: height / 2
-                  color: Style.normalBorderFor(root.foreground, Color.accent)
-
-                  Rectangle {
-                    height: parent.height
-                    radius: height / 2
-                    color: Color.accent
-                    width: parent.width * Math.min(1, root.duration > 0 ? root.position / root.duration : 0)
-                  }
-                }
-
-                Rectangle {
-                  width: Style.space(10)
-                  height: width
-                  radius: width / 2
-                  color: Color.accent
-                  x: Math.max(0, Math.min(parent.width - width,
-                    parent.width * Math.min(1, root.duration > 0 ? root.position / root.duration : 0) - width / 2))
-                  anchors.verticalCenter: parent.verticalCenter
-                }
-
-                MouseArea {
-                  anchors.fill: parent
-                  enabled: !root.switchingEpisode
-                  hoverEnabled: true
-                  cursorShape: Qt.PointingHandCursor
-                  onPressed: function(mouse) {
-                    root.scrubbing = true
-                    root.previewSeek(mouse.x, width)
-                  }
-                  onPositionChanged: function(mouse) {
-                    if (pressed) root.previewSeek(mouse.x, width)
-                  }
-                  onReleased: function(mouse) {
-                    root.previewSeek(mouse.x, width)
-                    root.scrubbing = false
-                    root.commitSeek()
-                  }
-                  onCanceled: root.scrubbing = false
-                }
-              }
-
-              Row {
-                width: parent.width
-                spacing: Style.space(8)
-
-                Repeater {
-                  model: [
-                    { label: "−15", action: "back" },
-                    { label: root.playing ? "Pause" : "Play", action: "toggle" },
-                    { label: "+15", action: "forward" },
-                    { label: root.speed + "×", action: "speed" },
-                    { label: "Next", action: "next" }
-                  ]
-                  Rectangle {
-                    required property var modelData
-                    implicitWidth: controlLabel.implicitWidth + Style.space(18)
-                    implicitHeight: controlLabel.implicitHeight + Style.space(10)
-                    radius: Style.cornerRadius
-                    color: controlMouse.containsMouse
-                      ? Style.hoverFillFor(root.foreground, Color.accent)
-                      : Style.normalFillFor(root.foreground, Color.accent)
-                    Text {
-                      id: controlLabel
-                      anchors.centerIn: parent
-                      text: modelData.label
-                      color: root.foreground
-                      font.family: root.fontFamily
-                      font.pixelSize: Style.font.caption
-                    }
-                    MouseArea {
-                      id: controlMouse
-                      anchors.fill: parent
-                      hoverEnabled: true
-                      cursorShape: Qt.PointingHandCursor
-                      onClicked: {
-                        if (modelData.action === "back") root.runControl(["seek", "-15"])
-                        else if (modelData.action === "toggle") root.togglePlayback()
-                        else if (modelData.action === "forward") root.runControl(["seek", "15"])
-                        else if (modelData.action === "speed") root.cycleSpeed()
-                        else if (modelData.action === "next") root.nextEpisode(false)
-                      }
-                    }
-                  }
-                }
-
-                Text {
-                  width: parent.width - x
-                  anchors.verticalCenter: parent.verticalCenter
-                  text: root.clock(root.position) + " / " + root.clock(root.duration)
-                    + (root.switchingEpisode ? "  ·  Loading…" : "")
-                  color: root.dim
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                  horizontalAlignment: Text.AlignRight
-                }
-              }
-            }
-          }
-
-          PanelSeparator { width: parent.width; foreground: root.foreground }
-
-          Text {
-            visible: root.entries.length === 0 && !root.loading
-            text: "The podcast queue is empty."
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-          }
-
-          Repeater {
-            model: root.entries
-            Item {
-              required property var modelData
-              required property int index
-              width: contentColumn.width
-              implicitHeight: episodeCopy.implicitHeight + Style.space(12)
-              Rectangle {
-                anchors.fill: parent
-                radius: Style.cornerRadius
-                color: index === root.currentIndex
-                  ? Style.selectedFillFor(root.foreground, Color.accent)
-                  : (episodeMouse.containsMouse ? Style.hoverFillFor(root.foreground, Color.accent) : "transparent")
-              }
-              Text {
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                width: Style.space(30)
-                text: index === root.currentIndex && root.playing ? "▶" : String(index + 1)
-                color: index === root.currentIndex ? Color.accent : root.dim
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.bodySmall
-                horizontalAlignment: Text.AlignHCenter
-              }
-              Column {
-                id: episodeCopy
-                anchors.left: parent.left
-                anchors.leftMargin: Style.space(38)
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: Style.space(2)
-                Text {
-                  width: parent.width
-                  text: modelData.title
-                  color: root.foreground
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.bodySmall
-                  elide: Text.ElideRight
-                }
-                Text {
-                  width: parent.width
-                  text: modelData.show_title + "  ·  " + root.clock(modelData.duration_seconds)
-                  color: root.dim
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                  elide: Text.ElideRight
-                }
-              }
-              MouseArea {
-                id: episodeMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.playEpisode(index)
-              }
-            }
-          }
-
-          Text {
-            width: parent.width
-            text: "Click an episode to play  ·  Drag progress to seek  ·  Space play/pause  ·  E edit queue  ·  Esc close"
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            horizontalAlignment: Text.AlignHCenter
-          }
-        }
+        controller: root
       }
     }
   }

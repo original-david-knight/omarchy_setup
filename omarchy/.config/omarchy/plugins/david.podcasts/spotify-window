@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+action="${1:-toggle}"
+case "$action" in start|show|toggle) ;; *) exit 2 ;; esac
+
+# The persistent Hyprland rule launches Spotify silently into this workspace.
+spotify_clients() {
+  hyprctl clients -j | jq -c '[.[] | select(
+    (.class // "" | test("^(spotify|com\\.spotify\\.Client)$"; "i")) or
+    (.initialClass // "" | test("^(spotify|com\\.spotify\\.Client)$"; "i")))]'
+}
+
+visible_here() {
+  hyprctl monitors -j | jq -e 'any(.[]; .focused and .specialWorkspace.name == "special:spotify")' >/dev/null
+}
+
+if [[ $action == toggle ]] && visible_here; then
+  exec hyprctl dispatch 'hl.dsp.workspace.toggle_special("spotify")'
+fi
+
+clients="$(spotify_clients)"
+if [[ $(jq length <<<"$clients") == 0 ]]; then
+  if ! pgrep -u "$(id -u)" -x spotify >/dev/null; then
+    state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/david-listening"
+    mkdir -p "$state_dir"
+    setsid uwsm-app -- /usr/bin/spotify >"$state_dir/spotify.log" 2>&1 </dev/null &
+  fi
+  for _ in {1..100}; do
+    clients="$(spotify_clients)"
+    [[ $(jq length <<<"$clients") != 0 ]] && break
+    sleep 0.1
+  done
+fi
+
+if [[ $(jq length <<<"$clients") == 0 ]]; then
+  printf 'Spotify has not opened its window yet. Try again in a moment.\n' >&2
+  exit 1
+fi
+
+# Also handle an existing window opened before the rule was installed.
+while IFS= read -r address; do
+  [[ $address =~ ^0x[[:xdigit:]]+$ ]] || continue
+  hyprctl dispatch "hl.dsp.window.move({ workspace = \"special:spotify\", follow = false, window = \"address:$address\" })" >/dev/null
+done < <(jq -r '.[] | select(.workspace.name != "special:spotify") | .address' <<<"$clients")
+
+if [[ $action != start ]] && ! visible_here; then
+  hyprctl dispatch 'hl.dsp.workspace.toggle_special("spotify")' >/dev/null
+fi
