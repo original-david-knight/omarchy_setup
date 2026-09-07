@@ -3,7 +3,7 @@ set -euo pipefail
 
 SSID="WeWorkWiFi"
 IDENTITY="${WEWORK_WIFI_IDENTITY:-david@knight.fm}"
-PASSWORD="${WEWORK_WIFI_PASSWORD:-plugs-harms-wood-step}"
+PASSWORD="${WEWORK_WIFI_PASSWORD:-}"
 DOMAIN_MASK="${WEWORK_WIFI_DOMAIN_MASK:-wenw.net}"
 CA_CERT="${WEWORK_WIFI_CA_CERT:-/etc/ssl/certs/ca-certificates.crt}"
 CONNECTION="${WEWORK_WIFI_CONNECTION:-${SSID}}"
@@ -41,7 +41,7 @@ Usage:
   sudo ./connect_wework_wifi.sh --recover-knight
 
 Environment:
-  WEWORK_WIFI_PASSWORD=...              default: hard-coded in this script
+  WEWORK_WIFI_PASSWORD=...              required for connect mode; no stored default
   WEWORK_WIFI_IDENTITY=...              default: ${IDENTITY}
   WIFI_DEVICE=...                       default: autodetected (${DEVICE:-none})
   CONNECT_WAIT_SECONDS=...              default: ${CONNECT_WAIT_SECONDS}
@@ -365,7 +365,7 @@ if [[ "${MODE}" == "recover-knight" ]]; then
   die "failed to restore ${FALLBACK_SSID}"
 fi
 
-[[ -n "${PASSWORD}" ]] || die "password cannot be empty"
+[[ -n "${PASSWORD}" ]] || die "set WEWORK_WIFI_PASSWORD before connecting"
 
 write_wework_profile
 collect_diagnostics "after-profile-write"

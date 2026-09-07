@@ -19,7 +19,7 @@ if [[ ! -f $art_txt ]]; then
   exit 1
 fi
 
-for command_name in fc-match magick omarchy-plymouth-set; do
+for command_name in fc-match magick omarchy; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     echo "Missing required command: $command_name" >&2
     exit 1
@@ -58,4 +58,29 @@ magick \
   "$tmp_logo"
 
 install -m 0644 "$tmp_logo" "$logo_png"
-omarchy-plymouth-set "$background" "$foreground" "$logo_png"
+
+# Older theme customizations could leave these package directories user-owned.
+# Restore the package's directory metadata before Omarchy validates its publish
+# destinations. Only the two directories are changed; their contents stay put.
+for theme_dir in /usr/share/plymouth/themes/omarchy /usr/share/sddm/themes/omarchy; do
+  if [[ ! -d $theme_dir || -L $theme_dir || $(realpath -e -- "$theme_dir") != "$theme_dir" ]]; then
+    echo "Expected a real theme directory at $theme_dir; repair the Omarchy theme package before retrying." >&2
+    exit 1
+  fi
+  parent_dir=$(dirname -- "$theme_dir")
+  while :; do
+    parent_mode=$(stat -c %a -- "$parent_dir")
+    if [[ $(stat -c %u -- "$parent_dir") != 0 ]] || (( (8#$parent_mode & 0022) != 0 )); then
+      echo "Cannot prepare $theme_dir: parent $parent_dir must be root-owned and not group- or world-writable." >&2
+      exit 1
+    fi
+    [[ $parent_dir != / ]] || break
+    parent_dir=$(dirname -- "$parent_dir")
+  done
+  if [[ $(stat -c '%u:%g:%a' -- "$theme_dir") != 0:0:755 ]]; then
+    echo "Restoring root ownership and mode 0755 on $theme_dir"
+    sudo /usr/bin/install -d -o root -g root -m 0755 -- "$theme_dir"
+  fi
+done
+
+omarchy plymouth set "$background" "$foreground" "$logo_png"

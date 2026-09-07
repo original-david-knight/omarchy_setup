@@ -6,8 +6,7 @@ dart-code.flutter
 enkia.tokyo-night
 esbenp.prettier-vscode
 formulahendry.dotnet-test-explorer
-github.copilot
-github.copilot-chat
+# Copilot Chat is bundled with VS Code; do not install the legacy Copilot pack.
 golang.go
 koichisasada.vscode-rdbg
 ms-azuretools.vscode-containers

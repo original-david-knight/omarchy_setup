@@ -1,0 +1,19 @@
+[grid]
+size = 26                    # 26x26 main grid
+subgrid_pixel_size = 5       # target pixel size per sub-cell
+
+[keybinds]
+left_click = "space"
+right_click = "Shift-space"
+double_click = "space space"
+exit = "Escape"
+backspace = "BackSpace"
+
+[behavior]
+stay_active = false          # exit after click
+double_click_timeout_ms = 250
+
+[appearance]
+grid_opacity = 0.4
+grid_line_width = 1
+label_font_size = 14

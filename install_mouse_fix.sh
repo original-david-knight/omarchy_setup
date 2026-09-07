@@ -1,4 +1,7 @@
-#!/bin/sh
+#!/usr/bin/env bash
+set -euo pipefail
+repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+cd "$repo_dir"
 
 sudo install -Dm755 mouse_fix/usr/local/bin/ensure-razer-basilisk-mouse /usr/local/bin/ensure-razer-basilisk-mouse
 sudo install -Dm644 mouse_fix/etc/systemd/system/ensure-razer-basilisk-mouse.service /etc/systemd/system/ensure-razer-basilisk-mouse.service

@@ -1,0 +1,14 @@
+[Unit]
+Description=Capture Previous Boot Forensics Snapshot
+After=systemd-journald.service local-fs.target
+Wants=local-fs.target
+ConditionPathExists=/var/log/journal
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/capture-prev-boot.sh
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target

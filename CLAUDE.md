@@ -3,6 +3,9 @@
 This repository provisions personal configuration on Omarchy Quattro. GNU Stow
 deploys each top-level package into the user's home directory.
 
+Follow [AGENTS.md](AGENTS.md) for the public/private setup boundary, especially
+Everything App source provisioning, credentials, and account sign-in steps.
+
 ## Commands
 
 ```bash
