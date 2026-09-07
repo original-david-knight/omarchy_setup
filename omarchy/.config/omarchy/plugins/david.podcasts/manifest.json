@@ -1,20 +1,20 @@
 {
   "schemaVersion": 1,
   "id": "david.podcasts",
-  "name": "Podcast queue",
-  "version": "1.0.0",
+  "name": "Listening",
+  "version": "2.0.0",
   "author": "David Knight",
-  "description": "Everything App podcast queue and desktop player.",
+  "description": "Spotify, the Everything podcast queue, and a personal myNoise mixer with artwork.",
   "kinds": ["bar-widget"],
   "activation": "on-demand",
   "entryPoints": {
     "barWidget": "Panel.qml"
   },
   "barWidget": {
-    "displayName": "Podcast queue",
-    "description": "Queue, playback controls, and queue-management links.",
+    "displayName": "Listening",
+    "description": "Music, podcasts, soundscapes, and album artwork in one listening room.",
     "category": "Media",
-    "aliases": ["podcasts", "player", "queue"],
+    "aliases": ["listening", "spotify", "podcasts", "mynoise", "music", "player", "queue"],
     "allowMultiple": false,
     "defaultSection": "right"
   }

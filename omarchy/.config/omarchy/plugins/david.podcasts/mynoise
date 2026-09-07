@@ -1,0 +1,299 @@
+#!/usr/bin/env python3
+"""User-local myNoise player. Official pages, lazy loading, private Unix IPC."""
+import fcntl
+import json
+import math
+import os
+from pathlib import Path
+import socket
+import subprocess
+import sys
+import time
+
+BASE = Path(__file__).resolve().parent
+SOUNDS = json.loads((BASE / "soundscapes.json").read_text())
+RUNTIME = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "david-listening"
+STATE = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state"))) / "david-listening"
+SOCKET = RUNTIME / "mynoise.sock"
+
+
+def initial_state():
+    try:
+        volumes = json.loads((STATE / "volumes.json").read_text())
+    except (OSError, ValueError):
+        volumes = {}
+    if not isinstance(volumes, dict):
+        volumes = {}
+    def volume(key):
+        try:
+            value = float(volumes.get(key, 0.35))
+            return max(0, min(1, value)) if math.isfinite(value) else 0.35
+        except (TypeError, ValueError):
+            return 0.35
+    return {s["id"]: dict(playing=False, loading=False, ready=False, requested=False,
+                         volume=volume(s["id"]), error="") for s in SOUNDS}
+
+
+def validate(args):
+    action = args[0] if args else "status"
+    if action not in ("status", "pause-all", "shutdown", "play", "pause", "toggle", "volume", "open"):
+        raise ValueError("Unknown myNoise command")
+    key = args[1] if len(args) > 1 else ""
+    if action in ("play", "pause", "toggle", "volume", "open") and key not in {s["id"] for s in SOUNDS}:
+        raise ValueError("Unknown soundscape")
+    value = None
+    if action == "volume":
+        value = float(args[2])
+        if not math.isfinite(value) or not 0 <= value <= 1:
+            raise ValueError("Volume must be between 0 and 1")
+    return dict(action=action, id=key, value=value)
+
+
+def request(payload):
+    with socket.socket(socket.AF_UNIX) as client:
+        client.settimeout(3)
+        client.connect(str(SOCKET))
+        client.sendall(json.dumps(payload).encode() + b"\n")
+        data = b""
+        while b"\n" not in data:
+            chunk = client.recv(65536)
+            if not chunk:
+                raise OSError("myNoise player disconnected")
+            data += chunk
+        return json.loads(data)
+
+
+def client_main(args):
+    payload = validate(args)
+    try:
+        return request(payload)
+    except (OSError, ValueError):
+        if payload["action"] in ("status", "pause-all", "shutdown", "pause"):
+            return {"sounds": initial_state(), "running": False}
+    RUNTIME.mkdir(mode=0o700, parents=True, exist_ok=True)
+    STATE.mkdir(mode=0o700, parents=True, exist_ok=True)
+    # Concurrent bar instances may issue commands at the same time.
+    with (RUNTIME / "start.lock").open("w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            return request(payload)
+        except (OSError, ValueError):
+            with (STATE / "mynoise.log").open("w") as log:
+                subprocess.Popen([sys.executable, str(BASE / "mynoise"), "--serve"],
+                                 stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+                                 start_new_session=True)
+            for _ in range(100):
+                time.sleep(0.1)
+                try:
+                    return request(payload)
+                except (OSError, ValueError):
+                    pass
+    raise RuntimeError(f"myNoise could not start. See {STATE / 'mynoise.log'}")
+
+
+def serve():
+    from PySide6.QtCore import QTimer, QUrl
+    from PySide6.QtNetwork import QLocalServer
+    from PySide6.QtWidgets import QApplication
+    from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineSettings
+    from PySide6.QtWebEngineWidgets import QWebEngineView
+
+    app = QApplication([sys.argv[0]])
+    app.setApplicationName("Listening · myNoise")
+    app.setQuitOnLastWindowClosed(False)
+    profile = QWebEngineProfile("david-listening", app)
+    profile.setPersistentStoragePath(str(STATE / "web-profile"))
+    profile.setCachePath(str(STATE / "web-cache"))
+    profile.settings().setAttribute(QWebEngineSettings.PlaybackRequiresUserGesture, False)
+    states, pages, views, pending = initial_state(), {}, {}, {}
+
+    class Page(QWebEnginePage):
+        def acceptNavigationRequest(self, url, kind, main):
+            return not main or (url.scheme() == "https" and url.host().lower() in ("mynoise.net", "www.mynoise.net"))
+
+        def javaScriptConsoleMessage(self, level, message, line, source):
+            pass
+
+    class View(QWebEngineView):
+        def closeEvent(self, event):
+            self.hide()
+            event.ignore()
+
+    def apply(key):
+        state, page = states[key], pages[key]
+        if not state["ready"]:
+            return
+        playing = pending.pop(key, None)
+        script = f"if (typeof streamAudio !== 'undefined' && streamAudio) streamAudio.volume = {state['volume']};"
+        if playing is not None:
+            script += "if (Boolean(bMUTE) === " + str(playing).lower() + ") toggleMute();"
+            if playing:
+                script += "resumeContext();"
+            if not playing:
+                page.setAudioMuted(True)
+        # Apply the requested gain before exposing audio, even on first load.
+        page.runJavaScript(script, lambda _: page.setAudioMuted(not playing) if playing is not None else None)
+
+    def ensure(key):
+        if key in pages:
+            return
+        state = states[key]
+        state.update(loading=True, error="")
+        page = Page(profile, app)
+        page.setAudioMuted(True)
+        pages[key] = page
+        view = View()
+        view.setPage(page)
+        view.resize(1100, 850)
+        views[key] = view
+
+        def loaded(ok):
+            if not ok:
+                pending[key] = False
+                state.update(loading=False, requested=False, error="Could not load myNoise. Press play to retry.")
+        page.loadFinished.connect(loaded)
+        page.renderProcessTerminated.connect(lambda *_: state.update(
+            playing=False, loading=False, ready=False, error="Soundscape stopped. Press play to retry."))
+        page.load(QUrl(next(s["url"] for s in SOUNDS if s["id"] == key)))
+        def timed_out():
+            if pages.get(key) is page and state["loading"] and not state["ready"]:
+                pending[key] = False
+                state.update(loading=False, requested=False, error="Soundscape timed out. Press play to retry.")
+                page.setAudioMuted(True)
+                page.triggerAction(QWebEnginePage.Stop)
+        QTimer.singleShot(90000, timed_out)
+
+    def sample(key, raw):
+        try:
+            info = json.loads(raw)
+        except (ValueError, TypeError):
+            return
+        state = states[key]
+        was_ready = state["ready"]
+        state["ready"] = info.get("ready", False)
+        if state["ready"]:
+            state["loading"] = False
+            state["error"] = ""
+            if not was_ready or key in pending:
+                apply(key)
+            else:
+                # The full website mixer can also change playback.
+                pages[key].setAudioMuted(bool(info.get("muted", True)))
+                state["requested"] = not bool(info.get("muted", True))
+            state["playing"] = bool(info.get("playing") and not pages[key].isAudioMuted())
+
+    def poll():
+        for key, page in list(pages.items()):
+            page.runJavaScript("""JSON.stringify({
+                ready: typeof bFINISHEDLOADING !== 'undefined' && bFINISHEDLOADING === 1,
+                muted: typeof bMUTE === 'undefined' || Boolean(bMUTE),
+                playing: typeof bMUTE !== 'undefined' && !bMUTE &&
+                  typeof context !== 'undefined' && context && context.state === 'running'
+            })""", lambda raw, key=key: sample(key, raw))
+
+    def command(payload):
+        action, key = payload["action"], payload.get("id", "")
+        # Validate again at the IPC boundary; clients never supply JavaScript/URLs.
+        args = [action, key]
+        if action == "volume":
+            args.append(str(payload.get("value")))
+        validated = validate(args)
+        if action == "shutdown":
+            for page in pages.values():
+                page.setAudioMuted(True)
+            QTimer.singleShot(50, app.quit)
+        elif action == "pause-all":
+            for k in pages:
+                pending[k] = False
+                pages[k].setAudioMuted(True)
+                states[k]["playing"] = False
+                states[k]["requested"] = False
+                apply(k)
+        elif action in ("play", "pause", "toggle", "open", "volume"):
+            state = states[key]
+            if action == "volume":
+                state["volume"] = validated["value"]
+                temp = STATE / "volumes.tmp"
+                temp.write_text(json.dumps({k: v["volume"] for k, v in states.items()}))
+                temp.replace(STATE / "volumes.json")
+                if key in pages:
+                    apply(key)
+            else:
+                if action != "open":
+                    pending[key] = action == "play" or (action == "toggle" and not pending.get(key, state["requested"]))
+                    state["requested"] = pending[key]
+                elif key not in pages:
+                    pending[key] = False
+                if state["error"] and key in pages:
+                    views.pop(key).deleteLater()
+                    pages.pop(key).deleteLater()
+                    state.update(ready=False, error="")
+                ensure(key)
+                if action == "open":
+                    views[key].show()
+                    views[key].raise_()
+                    views[key].activateWindow()
+                elif not pending[key]:
+                    pages[key].setAudioMuted(True)
+                    state["playing"] = False
+                apply(key)
+        return {"sounds": states, "running": True}
+
+    server = QLocalServer(app)
+    server.setSocketOptions(QLocalServer.UserAccessOption)
+    QLocalServer.removeServer(str(SOCKET))
+    if not server.listen(str(SOCKET)):
+        raise RuntimeError(server.errorString())
+    connections = {}
+
+    def connect():
+        while server.hasPendingConnections():
+            conn = server.nextPendingConnection()
+            connections[conn] = b""
+
+            def read(conn=conn):
+                connections[conn] += bytes(conn.readAll())
+                if len(connections[conn]) > 8192:
+                    conn.disconnectFromServer()
+                    return
+                if b"\n" not in connections[conn]:
+                    return
+                try:
+                    result = command(json.loads(connections[conn].split(b"\n")[0]))
+                except (ValueError, KeyError, TypeError, IndexError) as error:
+                    result = {"error": str(error)}
+                conn.write(json.dumps(result).encode() + b"\n")
+                conn.flush()
+                conn.disconnectFromServer()
+
+            def disconnected(conn=conn):
+                connections.pop(conn, None)
+                conn.deleteLater()
+            conn.readyRead.connect(read)
+            conn.disconnected.connect(disconnected)
+
+    server.newConnection.connect(connect)
+    timer = QTimer(app)
+    timer.timeout.connect(poll)
+    timer.start(500)
+    app.exec()
+    server.close()
+    for view in views.values():
+        view.setPage(None)
+    for page in pages.values():
+        page.deleteLater()
+    app.processEvents()
+
+
+if __name__ == "__main__":
+    try:
+        if sys.argv[1:] == ["--serve"]:
+            serve()
+        else:
+            result = client_main(sys.argv[1:])
+            if result.get("error"):
+                raise RuntimeError(result["error"])
+            print(json.dumps(result))
+    except (OSError, ValueError, RuntimeError, IndexError) as error:
+        print(error, file=sys.stderr)
+        sys.exit(1)

@@ -5,18 +5,34 @@ config="${EVERYTHING_AGENT_CONFIG_DIR:-$HOME/.config/everything-agent}/config.js
 service_url="$(jq -er '.service_url | rtrimstr("/")' "$config")"
 token="$(jq -er .token "$config")"
 
+scratch="$(mktemp -d)"
+trap 'rm -rf "$scratch"' EXIT
+
 curl -fsS --max-time 20 \
   -H "Authorization: Bearer $token" \
-  "$service_url/api/podcasts/queue" \
-| jq -c '{
+  "$service_url/api/podcasts/queue" >"$scratch/queue.json"
+
+# Many feeds only provide show artwork; preserve the queue if this optional
+# enrichment is unavailable.
+if ! curl -fsS --max-time 8 \
+  -H "Authorization: Bearer $token" \
+  "$service_url/api/podcasts/subscriptions" >"$scratch/shows.json" 2>/dev/null \
+  || ! jq -e '.subscriptions | type == "array"' "$scratch/shows.json" >/dev/null 2>&1; then
+  printf '{"subscriptions":[]}' >"$scratch/shows.json"
+fi
+
+jq -c --slurpfile shows "$scratch/shows.json" '
+  ($shows[0].subscriptions | map({key:.id,value:.artwork_url}) | from_entries) as $art |
+  {
     meta: (.meta // ""),
     entries: [(.entries // [])[] | {
       episode_id: (.episode_id // ""),
       title: (.title // ""),
       show_title: (.show_title // ""),
+      artwork_url: (if (.artwork_url // "") != "" then .artwork_url else ($art[(.subscription_id // "")] // "") end),
       enclosure_url: (.enclosure_url // ""),
       duration_seconds: (.duration_seconds // 0),
       position_seconds: (.position_seconds // 0),
       completed: (.completed // false)
     }]
-  }'
+  }' "$scratch/queue.json"

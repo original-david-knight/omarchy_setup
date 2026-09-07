@@ -1,5 +1,8 @@
 -- Personal input behavior carried forward from the pre-Quattro config.
 hl.config({
+  misc = {
+    middle_click_paste = true,
+  },
   input = {
     kb_options = "compose:caps",
     follow_mouse = 0,

@@ -64,6 +64,12 @@ The always-expanded `david.tray` clone is tracked alongside the task, Jira,
 GitHub, and podcast widgets, so every custom ID in either layout has a matching
 plugin in the public stow package. `stow_all.sh` validates that invariant.
 
+`david.podcasts` is the unified **Listening** widget: Spotify through MPRIS,
+the existing Everything podcast player, and three independently controlled
+myNoise soundscapes. Its stable ID preserves both profile layouts and the
+media-key fallback. `install_listening.sh` installs its dependencies. See
+`docs/listening-widget.md` for controls, configuration, and diagnostics.
+
 `herdr` and `bin` must remain non-folded because those directories also hold
 runtime state or files owned outside this repository. The deployment script
 uses non-folding consistently for every package so profile changes and future

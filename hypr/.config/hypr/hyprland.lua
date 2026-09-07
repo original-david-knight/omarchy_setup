@@ -34,6 +34,12 @@ o.window(
   { initial_title = "^music\\.youtube\\.com.*" },
   { workspace = "special:music", tile = true }
 )
+-- Listening controls Spotify while its full window stays tucked away.
+o.window("^([Ss]potify|com\\.spotify\\.Client)$", {
+  workspace = "special:spotify silent",
+  no_initial_focus = true,
+  suppress_event = "activate",
+})
 o.window("^[sS]lack$", { workspace = "special:slack" })
 o.window("^(obsidian|md\\.obsidian\\.Obsidian)$", { workspace = "special:slack" })
 o.window("^code$", { workspace = "1" })

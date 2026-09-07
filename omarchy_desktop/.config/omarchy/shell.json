@@ -41,6 +41,9 @@
         },
         {
           "id": "omarchy.workspaces"
+        },
+        {
+          "id": "david.podcasts"
         }
       ],
       "right": [
@@ -59,9 +62,6 @@
         },
         {
           "id": "david.jira-work"
-        },
-        {
-          "id": "david.podcasts"
         },
         {
           "id": "david.tasks"

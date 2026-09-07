@@ -1,0 +1,26 @@
+[
+  {
+    "id": "coast",
+    "title": "Irish Coast",
+    "subtitle": "Wind, sea & rain",
+    "url": "https://mynoise.net/NoiseMachines/windSeaRainNoiseGenerator.php",
+    "artwork": "https://mynoise.net/Data/IRISHCOAST/album@512.jpg",
+    "color": "#84c7dc"
+  },
+  {
+    "id": "forest",
+    "title": "Primeval Forest",
+    "subtitle": "Your forest mix",
+    "url": "https://mynoise.net/NoiseMachines/primevalEuropeanForestSoundscapeGenerator.php?l=00360000343535353500&m=&d=0",
+    "artwork": "https://mynoise.net/Data/FOREST/album@512.jpg",
+    "color": "#add5a0"
+  },
+  {
+    "id": "night",
+    "title": "Summer Night",
+    "subtitle": "Crickets & ultrasonic ambience",
+    "url": "https://mynoise.net/NoiseMachines/ultrasonicNoiseGenerator.php",
+    "artwork": "https://mynoise.net/Data/ULTRASONIC/album@512.jpg",
+    "color": "#c5b4eb"
+  }
+]
