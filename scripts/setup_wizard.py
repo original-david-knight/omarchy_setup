@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import re
+import select
 import shlex
 import shutil
 import signal
@@ -143,6 +144,21 @@ class UI:
             if value in options:
                 return value
             self.say("Choose one of the letters shown above.")
+
+    def wait_for_connection(self, probe, options):
+        self.say("Complete the sign-in in the opened application. Setup checks automatically and continues when connected.")
+        for key, label in options.items():
+            self.say(f"  [{key}] {label}")
+        while True:
+            if probe():
+                return "connected"
+            if select.select([sys.stdin], [], [], 3)[0]:
+                value = sys.stdin.readline()
+                if not value:
+                    raise Pause()
+                choice = value.strip().lower()
+                if choice in options:
+                    return choice
 
 
 @dataclasses.dataclass
@@ -519,6 +535,8 @@ class Wizard:
                 self.ui.say("The application could not start. Open it from the application launcher.")
         else:
             result = self.runner.run(self.command(action["argv"]), root, step_id + ".action")
+            if result.code in (130, -signal.SIGINT):
+                raise Pause(130)
             if result.code:
                 self.ui.say(f"Action exited {result.code}. Log: {result.log}")
 
@@ -534,7 +552,7 @@ class Wizard:
                 self.state.record(step_id, signature, "blocked", reason=f"Public key is missing: {key}. Rerun SSH preparation.")
                 self.ui.say("SSH preparation is incomplete; this account step will be reported at the end.")
                 return
-            step = dict(step, probe={"argv": ["git", "-c", "core.sshCommand=ssh -oBatchMode=yes -oStrictHostKeyChecking=yes -oConnectTimeout=10", "ls-remote", "--exit-code", step["repo"], "HEAD"]})
+            step = dict(step, probe={"argv": ["git", "-c", "core.sshCommand=ssh -oBatchMode=yes -oStrictHostKeyChecking=accept-new -oConnectTimeout=10", "ls-remote", "--exit-code", step["repo"], "HEAD"]})
         if step.get("probe"):
             self.ui.say("Checking the current connection…")
         if (step.get("probe") and self.probe(step["probe"])) or (step.get("ack") and self.acknowledged(step["ack"])):
@@ -545,20 +563,31 @@ class Wizard:
             self.state.record(step_id, signature, "pending", remedy=step.get("instructions", "Run ./setup.sh without --defer-checks to complete this check."))
             self.ui.say(f"Left pending: {step['label']}")
             return
+        self.state.record(step_id, signature, "pending", remedy=step.get("instructions", "Complete sign-in and rerun setup."))
         self.ui.say(step.get("instructions", ""))
         if kind == "github":
             self.ui.say(f"\nPublic key ({key}):\n{key.read_text().strip()}\n\nGitHub key settings: https://github.com/settings/ssh/new")
+            self.action(root, {"argv": ["xdg-open", "https://github.com/settings/ssh/new"], "launch": True}, step_id)
+        # Start the connection immediately. Retry and pause controls remain
+        # available if authentication fails or needs to be deferred.
+        for action in step.get("actions", []):
+            self.action(root, action, step_id)
         while True:
-            options = {"c": "Check connection"} if step.get("probe") else {"d": "I opened it and verified that it works"}
+            options = {"c": "Check now"} if step.get("probe") else {"d": "I opened it and verified that it works"}
             if kind == "github":
                 options.update(o="Open GitHub key settings", k="Copy the public key")
             for i, action in enumerate(step.get("actions", []), 1):
-                options[str(i)] = action["label"]
+                options[str(i)] = "Retry: " + action["label"]
             if step.get("allow_later") or kind == "github":
                 options["n"] = "Do this later; leave it pending"
             options["f"] = "Rerun an earlier setup step"
             options["p"] = "Pause and resume later"
-            choice = self.ui.choose("Continue when you are ready.", options, "c" if step.get("probe") else "d")
+            choice = (self.ui.wait_for_connection(lambda: self.probe(step["probe"]), options)
+                      if step.get("probe") else self.ui.choose("Continue when you are ready.", options, "d"))
+            if choice == "connected":
+                self.state.record(step_id, signature, "done")
+                self.ui.say("Connection verified.")
+                return
             if choice == "p":
                 self.state.record(step_id, signature, "pending")
                 raise Pause()
@@ -601,11 +630,12 @@ class Wizard:
         profiles = json.loads((root / step["file"]).read_text())
         steps = []
         for index, profile in enumerate(profiles):
-            directory, email = profile["directory"], profile["email"]
+            email = profile["email"]
+            command = [str(self.public / "bin/bin/chrome-profile"), "--email", email]
             steps.append({"id": str(index), "label": f"Chrome: {email}", "kind": "login", "allow_later": True,
-                          "instructions": f"Sign into Chrome itself as {email} in {directory}. If the check does not update, close that Chrome window and check again.",
-                          "probe": {"file": str(self.home / ".config/google-chrome/Local State"), "json_equals": {"path": ["profile", "info_cache", directory, "user_name"], "value": email}},
-                          "actions": [{"label": "Open this Chrome profile", "argv": ["google-chrome-stable", "--profile-directory=" + directory, "chrome://settings/people"], "launch": True}]})
+                          "instructions": f"Sign into Chrome itself as {email}. Any Chrome profile is accepted. If detection takes a while, close that Chrome window so it saves its account information.",
+                          "probe": {"argv": [*command, "--check"]},
+                          "actions": [{"label": "Open Chrome sign-in", "argv": [*command, "--create"], "launch": True}]})
         self.run_group("Chrome profiles", "private.browser", root, steps)
         return all(self.state.data["steps"].get("private.browser." + step["id"], {}).get("status") == "done" for step in steps)
 

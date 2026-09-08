@@ -16,7 +16,8 @@ baseline and prepares administrator/SSH access. It finishes public application
 installs (including Chrome), configuration,
 and readiness checks before requesting GitHub access. Once public setup passes,
 it fetches and prepares private setup, installs its tools, and guides account
-sign-ins and opening checks. Application installs run unattended with live
+sign-ins and opening checks. Connection actions launch automatically and
+advance when their account checks pass. Application installs run unattended with live
 output and private logs; failures are recorded while independent steps continue.
 If Omarchy offers a reboot during its update, defer it until setup finishes.
 
