@@ -12,6 +12,7 @@ npm
 ghostty
 ttf-cascadia-mono-nerd
 python-gobject
+python-cryptography
 gtk3
 libx11
 wl-clipboard

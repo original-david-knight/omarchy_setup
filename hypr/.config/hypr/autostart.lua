@@ -9,7 +9,8 @@ local function launch_if_present(path)
 end
 
 launch_if_present(home .. "/bin/auto-touchpad-toggle")
-launch_if_present(home .. "/.local/bin/lifedash-open")
+-- The private companion owns scheduled app opening; a second launch here can
+-- race the companion and open another browser window with an older launcher.
 
 -- Keep middle-click selection paste working across Chrome/XWayland and Wayland.
 if o.cmd_present(home .. "/bin/primary-selection-sync") then

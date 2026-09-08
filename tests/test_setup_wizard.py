@@ -275,6 +275,9 @@ class WizardTests(unittest.TestCase):
             with patch.object(engine, 'probe', side_effect=github_ready):
                 self.assertEqual(engine.run(), 0)
         self.assertEqual((self.home / 'ledger').read_text().splitlines(), ['public', 'configuration', 'public readiness', 'github', 'preparation', 'handoff', 'private', 'public readiness', 'github'])
+        completion = self.state.directory.parent / 'iso/complete'
+        self.assertEqual(json.loads(completion.read_text())['version'], 1)
+        self.assertEqual(completion.stat().st_mode & 0o777, 0o600)
         for log in (self.root / 'logs').iterdir():
             self.assertEqual(log.stat().st_mode & 0o777, 0o600)
 
@@ -367,6 +370,7 @@ class WizardTests(unittest.TestCase):
         self.fixture_plan(steps)
         first = FakeRunner(self.root)
         self.assertEqual(self.make(runner=first, public_only=True).run(), 0)
+        self.assertFalse((self.state.directory.parent / 'iso/complete').exists())
         self.assertEqual([call[1] for call in first.calls],
                          ['public.update_omarchy', 'public.check_baseline', 'public.setup_sudo', 'public.install_chrome'])
         runner = FakeRunner(self.root)
@@ -378,6 +382,13 @@ class WizardTests(unittest.TestCase):
         runner = FakeRunner(self.root, [42, 0])
         self.assertEqual(self.make(runner=runner, public_only=True).run(), 1)
         self.assertEqual(len(runner.calls), 2)
+
+    def test_full_run_with_pending_checks_does_not_disable_first_login(self):
+        self.fixture_plan([], [{'id': 'pending', 'label': 'Pending', 'kind': 'manual', 'ack': 'fixture'}])
+        engine = self.make(defer_checks=True)
+        with patch.object(engine, 'probe', return_value=True):
+            self.assertEqual(engine.run(), 3)
+        self.assertFalse((self.state.directory.parent / 'iso/complete').exists())
 
     def test_deferred_checks_are_pending_without_opening_apps_or_asking(self):
         engine = self.make(defer_checks=True)

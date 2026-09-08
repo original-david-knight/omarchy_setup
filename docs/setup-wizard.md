@@ -60,6 +60,13 @@ with this option.
 
 ## Failures, pause and resume
 
+A successful full wizard run disables the ISO's first-login launcher, including
+when you resume directly with `~/omarchy_setup/setup.sh`. Public-only runs and
+pending or failed checks keep setup resumable. If you already completed setup
+with an older version but it reopens after reboot, run `./setup.sh --finish` once.
+This disables automatic setup opening and preserves saved progress; it does not
+run installers or mark individual readiness checks as passed.
+
 An install failure never opens a retry menu or stops independent steps in the
 current public or private installation pass.
 The wizard records its exit code and log, skips steps with an unmet declared
