@@ -33,6 +33,8 @@ class StagingTests(unittest.TestCase):
         for name in ('omarchy-personal-setup', 'post-boot.hook', 'omarchy-personal-setup.desktop'):
             shutil.copy2(ROOT / 'iso' / name, self.payload / name)
         shutil.copy2(ROOT / 'bootstrap.sh', self.payload / 'bootstrap.sh')
+        shutil.copy2(ROOT / 'scripts/install_backgrounds.py', self.payload / 'install_backgrounds.py')
+        shutil.copytree(ROOT / 'backgrounds', self.payload / 'backgrounds')
         self.ctx = SimpleNamespace(target=self.target, username='tester', defer_provisioning=False)
         patcher = patch.object(staging, 'PAYLOAD', self.payload)
         patcher.start()
@@ -46,7 +48,13 @@ class StagingTests(unittest.TestCase):
         self.assertEqual(hook.stat().st_mode & 0o777, 0o755)
         bootstrap = self.target / 'usr/local/share/omarchy-setup/bootstrap.sh'
         self.assertEqual(bootstrap.read_bytes(), (ROOT / 'bootstrap.sh').read_bytes())
-        self.assertEqual(sorted(p.name for p in bootstrap.parent.iterdir()), ['bootstrap.sh'])
+        self.assertEqual(sorted(p.name for p in bootstrap.parent.iterdir()), ['backgrounds', 'bootstrap.sh', 'install_backgrounds.py'])
+        background = self.home / '.local/state/omarchy/current/background'
+        self.assertTrue(background.is_file())
+        self.assertFalse(background.readlink().is_absolute())
+        self.assertEqual(background.lstat().st_uid, os.getuid())
+        self.assertEqual(len(list((self.home / '.config/omarchy/backgrounds').glob('*/*'))), 12)
+        self.assertFalse((self.home / '.local/state/omarchy-setup/backgrounds.json').exists())
         self.assertTrue((self.target / 'etc/skel' / staging.HOOK).is_file())
         self.assertFalse((self.home / 'omarchy_setup').exists())
 
@@ -58,6 +66,8 @@ class StagingTests(unittest.TestCase):
         staging.stage_personal_setup(self.ctx)
         self.assertTrue((self.target / 'etc/skel' / staging.HOOK).is_file())
         self.assertEqual(list((self.target / 'home').iterdir()), [])
+        shutil.copytree(self.target / 'etc/skel', self.home, symlinks=True)
+        self.assertTrue((self.home / '.local/state/omarchy/current/background').is_file())
 
     def test_staging_keeps_unrelated_configuration(self):
         config = self.home / '.config/omarchy/hooks/post-boot.d/existing'
@@ -83,14 +93,19 @@ class LauncherTests(unittest.TestCase):
         self.state = self.root / 'state'
         self.complete = self.state / 'omarchy-setup/iso/complete'
         self.ledger = self.root / 'ledger'
-        self.env = dict(os.environ, XDG_STATE_HOME=str(self.state),
+        self.home = self.root / 'home'
+        self.home.mkdir()
+        self.background_installer = self.root / 'install_backgrounds.py'
+        self.env = dict(os.environ, HOME=str(self.home), XDG_STATE_HOME=str(self.state),
                         PATH=f'{self.commands}:/usr/bin:/bin', HANDOFF_LEDGER=str(self.ledger))
         self.bootstrap = self.root / 'fixture-bootstrap.sh'
         self.bootstrap.write_text('#!/bin/bash\nprintf "%s\\n" "$@" >> "$HANDOFF_LEDGER"\nexit "${HANDOFF_STATUS:-0}"\n')
         self.launcher = self.root / 'launcher'
         self.launcher.write_text((ROOT / 'iso/omarchy-personal-setup').read_text().replace(
             'bootstrap=/usr/local/share/omarchy-setup/bootstrap.sh',
-            'bootstrap=' + shlex.quote(str(self.bootstrap))))
+            'bootstrap=' + shlex.quote(str(self.bootstrap))).replace(
+            '/usr/local/share/omarchy-setup/install_backgrounds.py', str(self.background_installer)).replace(
+            '/usr/local/share/omarchy-setup/backgrounds', str(ROOT / 'backgrounds')))
         self.command('pgrep', 'exit 1')
         self.command('omarchy-launch-terminal', 'printf "terminal %s\\n" "$*" >> "$HANDOFF_LEDGER"')
 
@@ -141,6 +156,15 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.ledger.read_text().strip(),
                          'terminal /usr/local/bin/omarchy-personal-setup')
+        self.assertFalse(self.complete.exists())
+
+    def test_bundled_background_is_selected_even_when_bootstrap_cannot_finish(self):
+        shutil.copy2(ROOT / 'scripts/install_backgrounds.py', self.background_installer)
+        self.env['HANDOFF_STATUS'] = '3'
+        result = self.run_launcher()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertTrue((self.home / '.local/state/omarchy/current/background').is_file())
+        self.assertTrue((self.home / '.local/state/omarchy-setup/backgrounds.json').is_file())
         self.assertFalse(self.complete.exists())
 
     def test_second_launcher_does_not_run_during_active_setup(self):

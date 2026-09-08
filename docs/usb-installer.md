@@ -8,10 +8,19 @@ GitHub `main` and starts `setup.sh` in a terminal as the new user.
 
 GitHub authentication and the private setup checkout happen inside the wizard,
 after the Omarchy update and all public installation, configuration, and checks.
-The image bundles only four public files: the bootstrap, terminal launcher,
-desktop entry, and post-boot hook. It contains no personal setup checkout,
-private application sources, credentials, browser sessions, or account data.
-The installer module that copies these files is also public.
+The image bundles the public bootstrap, terminal launcher, desktop entry,
+post-boot hook, wallpaper installer, and all 12 custom backgrounds. It contains
+no personal setup checkout, private application sources, credentials, browser
+sessions, or account data. The installer module that copies these files is also public.
+
+Backgrounds retain their theme folders under `~/.config/omarchy/backgrounds`.
+The initial selection is the starry-sky image with two children,
+`tokyo-night/Gemini_Generated_Image_3252l33252l33252.png`. The installer copies
+the images and stages a portable background link for both direct and deferred
+user creation. First login reapplies this selection after Omarchy's finalizer,
+before waiting for network access. A local completion marker preserves later
+wallpaper choices when setup runs again. Existing conflicting files are backed
+up, and additional user images are retained.
 
 ## Build
 
@@ -31,6 +40,8 @@ Build inputs:
   `2673c613d9a71e23920e43fbb951238145e0f1e8` and its pinned Archiso submodule.
 - Omarchy and Arch packages: the upstream stable package mirror at build time.
 - Setup scripts: GitHub `main` at first login, refreshed again on retries.
+- Backgrounds: this checkout's `backgrounds/manifest.json` and the image files
+  it lists, verified by SHA-256 before building.
 
 The installer source is pinned; the package mirror and setup repository remain
 rolling. This is not a fully reproducible package snapshot. The output includes
@@ -42,16 +53,16 @@ stay under `~/.cache/omarchy-setup-iso` so later builds can reuse downloads.
 Override them with absolute paths in `OMARCHY_ISO_OUTPUT_DIR` and
 `OMARCHY_ISO_CACHE_DIR`. Existing output images are not overwritten.
 
-To refresh the public handoff in an existing personal-setup ISO without
+To refresh the public handoff and bundled backgrounds in an existing personal-setup ISO without
 downloading packages again:
 
 ```sh
-./iso/refresh.sh dist/omarchy-setup-2026.09.07-x86_64.iso \
-  dist/omarchy-setup-2026.09.07-r2-x86_64.iso
+./iso/refresh.sh dist/omarchy-setup-2026.09.07-r2-x86_64.iso \
+  dist/omarchy-setup-2026.09.08-x86_64.iso
 ```
 
 This requires sudo, xorriso, and squashfs-tools. It retains the base image's
-package versions and BIOS/UEFI boot entries, replaces the public handoff files,
+package versions and BIOS/UEFI boot entries, replaces the public handoff and backgrounds,
 and regenerates the filesystem checksum and ISO checksum. Its temporary tree
 is removed on exit. Public wizard changes must still be published to GitHub
 for the launcher to download them; the ISO does not contain a setup checkout.
@@ -76,8 +87,9 @@ Setup** from the application launcher, or log in again to resume. The exact
 installed bootstrap is `/usr/local/share/omarchy-setup/bootstrap.sh`; after its
 first successful download, the wizard is `~/omarchy_setup/setup.sh`. Older USB
 installations can use the same restart command once Wi-Fi is connected.
-A bootstrap change requires rebuilding the ISO or replacing that installed
-bootstrap; wizard changes are picked up from GitHub on the next launch.
+A bootstrap or bundled-background change requires rebuilding the ISO to update
+the offline payload; wizard changes and backgrounds installed through the public
+setup are picked up from GitHub on the next launch.
 
 Only a successful wizard exit creates
 `~/.local/state/omarchy-setup/iso/complete` (under `XDG_STATE_HOME` when set).

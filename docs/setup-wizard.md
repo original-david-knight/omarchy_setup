@@ -46,6 +46,15 @@ Required emails and personal/work GitHub CLI identities live in the private
 repository. GitHub CLI checks validate both saved accounts individually, even
 when only one is active.
 
+Desktop configuration installs the 12 bundled custom backgrounds, retaining
+their theme folders. On first application it selects the saved starry-sky image;
+later runs preserve your wallpaper selection and any additional images. To add
+the collection to an existing installation without running the full wizard:
+
+```sh
+python3 scripts/install_backgrounds.py
+```
+
 Account steps offer “Do this later.” Declining repository access leaves its
 unmet dependent steps skipped while independent work proceeds. Build
 prerequisites are treated the same way. For application connections without an

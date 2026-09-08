@@ -27,6 +27,7 @@ fi
 for command in docker git python3 tar sha256sum; do
   command -v "$command" >/dev/null || { printf 'Missing build command: %s\n' "$command" >&2; exit 1; }
 done
+python3 "$repo_dir/scripts/install_backgrounds.py" --check
 mkdir -p -- "$cache_dir" "$output_dir"
 cache_dir=$(cd -- "$cache_dir" && pwd -P)
 output_dir=$(cd -- "$output_dir" && pwd -P)
@@ -85,5 +86,6 @@ mv -- "${images[0]}" "$output_dir/$image_name"
   printf 'setup_source=https://github.com/original-david-knight/omarchy_setup.git\nsetup_branch=main\n'
   printf 'built_at=%s\n' "$(date -u +%FT%TZ)"
   sha256sum "$repo_dir/bootstrap.sh" "$repo_dir/iso/omarchy-personal-setup" "$repo_dir/iso/post-boot.hook" "$repo_dir/iso/personal_setup.py"
+  sha256sum "$repo_dir/scripts/install_backgrounds.py" "$repo_dir/backgrounds/manifest.json"
 } >"$output_dir/$image_name.build-info"
 printf '\nCreated %s\nChecksum: %s\n' "$output_dir/$image_name" "$output_dir/$image_name.sha256"

@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "selected": "tokyo-night/Gemini_Generated_Image_3252l33252l33252.png",
+  "files": [
+    {
+      "path": "catppuccin/1-catppuccin.png",
+      "sha256": "66c5d53e0f1b2ebaf5778f0dbea63eaa680fc6fab67341c1aad4cff953a19857"
+    },
+    {
+      "path": "everforest/1-everforest.jpg",
+      "sha256": "0c509d3ef2893c98ae4e7adacf3a755c339fbac09d03ab4b2dddc361f476afb7"
+    },
+    {
+      "path": "gruvbox/1-grubox.jpg",
+      "sha256": "ae200a65e0fb2219b47fd7ae539e6206c4890839355b8b265d7ce311d8480b3c"
+    },
+    {
+      "path": "kanagawa/1-kanagawa.jpg",
+      "sha256": "9b817d717688539f0db87603b661992839c3cbb5d4918a02a4efc05c9f88b27d"
+    },
+    {
+      "path": "nord/1-nord.png",
+      "sha256": "6b1c453c02254acd13e83f07bfb466690a77f842545ea55fa227c889f1bfeba9"
+    },
+    {
+      "path": "tokyo-night/Gemini_Generated_Image_3252l33252l33252.png",
+      "sha256": "aa28d6a9886546b7f8a97ca02e54461afe0c811b010092b602bf6a5c211d7789"
+    },
+    {
+      "path": "tokyo-night/Gemini_Generated_Image_u0jiktu0jiktu0ji.png",
+      "sha256": "7fb5ed9eeb4ed59c70b09a31b13262196ca2a43975a7837857f2abd5eb959981"
+    },
+    {
+      "path": "tokyo-night/Gemini_Generated_Image_u7rqdeu7rqdeu7rq.png",
+      "sha256": "ae1428b681fa1751b2c5550ebcda41cd9b8cb00c5aff46214c6f0e8afa8429fe"
+    },
+    {
+      "path": "tokyo-night/desktop_grey_julia.png",
+      "sha256": "e07dffd8ec2a9af86aa36b5ce9458661839a3e4ed4a65485661432cbe5e60862"
+    },
+    {
+      "path": "tokyo-night/fractals-20260901-203320-653.png",
+      "sha256": "3c594938804f65f23c974b6a18d07410ef6f94150321d0d6d2dc33ad27434764"
+    },
+    {
+      "path": "tokyo-night/fractals-20260901-203349-422.png",
+      "sha256": "f26cf7713016cb4d4be9435aeb327c87cf6e0f3684f0b4457e543fedfa2534ac"
+    },
+    {
+      "path": "tokyo-night/gen_fractal_milky.png",
+      "sha256": "692b2f2dc8d323450d82e40033b480cbfcc62b28a17688ab948de360571307aa"
+    }
+  ]
+}

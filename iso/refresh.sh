@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Refresh only the public handoff in an existing personal-setup ISO. Package
+# Refresh the public handoff and backgrounds in an existing personal-setup ISO. Package
 # contents and the upstream installer stay at the original image's versions.
 if (($# != 2)); then
   echo 'Usage: iso/refresh.sh EXISTING.iso NEW.iso' >&2
@@ -14,6 +14,7 @@ output_iso=$(realpath -m -- "$2")
 for command in xorriso unsquashfs mksquashfs sha256sum sha512sum python3 sudo; do
   command -v "$command" >/dev/null || { printf 'Missing command: %s\n' "$command" >&2; exit 1; }
 done
+python3 "$repo_dir/scripts/install_backgrounds.py" --check
 work_dir=$(mktemp -d "${XDG_CACHE_HOME:-$HOME/.cache}/omarchy-iso-refresh.XXXXXX")
 cleanup() {
   sudo rm -rf -- "$work_dir"
@@ -32,6 +33,10 @@ sudo install -m 0755 "$repo_dir/bootstrap.sh" "$payload/bootstrap.sh"
 sudo install -m 0755 "$repo_dir/iso/omarchy-personal-setup" "$payload/omarchy-personal-setup"
 sudo install -m 0755 "$repo_dir/iso/post-boot.hook" "$payload/post-boot.hook"
 sudo install -m 0644 "$repo_dir/iso/omarchy-personal-setup.desktop" "$payload/omarchy-personal-setup.desktop"
+sudo install -m 0644 "$repo_dir/scripts/install_backgrounds.py" "$payload/install_backgrounds.py"
+sudo rm -rf -- "$payload/backgrounds"
+sudo cp -a -- "$repo_dir/backgrounds" "$payload/backgrounds"
+sudo chown -R root:root "$payload/backgrounds"
 sudo install -m 0644 "$repo_dir/iso/personal_setup.py" \
   "$work_dir/root/usr/share/omarchy-iso/orchestrator/personal_setup.py"
 sudo mksquashfs "$work_dir/root" "$work_dir/airootfs.sfs" \
@@ -50,10 +55,10 @@ xorriso -indev "$source_iso" -outdev "$output_iso" -boot_image any replay \
   printf 'Refreshed UTC: %s\n' "$(date -u +%FT%TZ)"
   printf 'Base ISO: %s\n' "$(basename -- "$source_iso")"
   sha256sum "$source_iso"
-  printf 'Change: public handoff payload only; original package versions retained.\n'
+  printf 'Change: public handoff and custom backgrounds; original package versions retained.\n'
   printf 'SquashFS: zstd level 15, 1 MiB blocks\n'
   printf 'Setup source: public GitHub main at first login\n'
   (cd "$repo_dir" && sha256sum bootstrap.sh iso/omarchy-personal-setup iso/post-boot.hook \
-    iso/omarchy-personal-setup.desktop iso/personal_setup.py iso/refresh.sh)
+    iso/omarchy-personal-setup.desktop iso/personal_setup.py iso/refresh.sh scripts/install_backgrounds.py backgrounds/manifest.json)
 } > "$output_iso.build-info"
 printf '\nRefreshed ISO: %s\n' "$output_iso"
