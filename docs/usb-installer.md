@@ -9,11 +9,13 @@ GitHub `main` and starts `setup.sh` in a terminal as the new user.
 GitHub authentication and the private setup checkout happen inside the wizard,
 after the Omarchy update and all public installation, configuration, and checks.
 The image bundles the public bootstrap, terminal launcher, desktop entry,
-post-boot hook, wallpaper installer, and all 12 custom backgrounds. It contains
+post-boot hook, wallpaper installer, and the seven custom backgrounds. It contains
 no personal setup checkout, private application sources, credentials, browser
 sessions, or account data. The installer module that copies these files is also public.
 
 Backgrounds retain their theme folders under `~/.config/omarchy/backgrounds`.
+The custom bundle contains only the seven added Tokyo Night images. Omarchy
+continues to provide its stock backgrounds through the normal installation.
 The initial selection is the starry-sky image with two children,
 `tokyo-night/Gemini_Generated_Image_3252l33252l33252.png`. The installer copies
 the images and stages a portable background link for both direct and deferred
@@ -57,8 +59,8 @@ To refresh the public handoff and bundled backgrounds in an existing personal-se
 downloading packages again:
 
 ```sh
-./iso/refresh.sh dist/omarchy-setup-2026.09.07-r2-x86_64.iso \
-  dist/omarchy-setup-2026.09.08-x86_64.iso
+./iso/refresh.sh dist/omarchy-setup-2026.09.08-x86_64.iso \
+  dist/omarchy-setup-2026.09.08-r2-x86_64.iso
 ```
 
 This requires sudo, xorriso, and squashfs-tools. It retains the base image's

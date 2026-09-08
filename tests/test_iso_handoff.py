@@ -53,7 +53,7 @@ class StagingTests(unittest.TestCase):
         self.assertTrue(background.is_file())
         self.assertFalse(background.readlink().is_absolute())
         self.assertEqual(background.lstat().st_uid, os.getuid())
-        self.assertEqual(len(list((self.home / '.config/omarchy/backgrounds').glob('*/*'))), 12)
+        self.assertEqual(len(list((self.home / '.config/omarchy/backgrounds').glob('*/*'))), 7)
         self.assertFalse((self.home / '.local/state/omarchy-setup/backgrounds.json').exists())
         self.assertTrue((self.target / 'etc/skel' / staging.HOOK).is_file())
         self.assertFalse((self.home / 'omarchy_setup').exists())
