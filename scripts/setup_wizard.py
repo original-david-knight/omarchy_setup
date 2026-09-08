@@ -48,6 +48,12 @@ def atomic_json(path, data):
         Path(temporary).unlink(missing_ok=True)
 
 
+def mark_setup_complete(directory):
+    # The original ISO launcher already checks this path. Record completion here
+    # too, including when setup was resumed directly from the Git checkout.
+    atomic_json(directory.parent / "iso/complete", {"version": 1, "completed": time.time()})
+
+
 @contextlib.contextmanager
 def ssh_agent(env):
     """Cache passphrases during preparation; only stop an agent we started."""
@@ -709,6 +715,7 @@ class Wizard:
                 self.run_phase("6 · Final readiness", "private", self.private, private_steps, "verify")
                 code = self.summary()
                 if code == 0:
+                    mark_setup_complete(self.state.directory)
                     self.ui.say("\nSetup complete — installation and readiness checks passed.")
                 return code
             except Revisit as request:
@@ -761,9 +768,17 @@ def main():
     parser.add_argument("--restart", action="store_true", help="back up progress and rerun setup; existing configurations remain governed by each script")
     parser.add_argument("--public-only", action="store_true", help="stop after public setup verification")
     parser.add_argument("--defer-checks", action="store_true", help="save application sign-ins and opening checks for a later run")
+    parser.add_argument("--finish", action="store_true", help="stop first-login autostart after completing setup; retain all saved progress")
     parser.add_argument("--profile", choices=["auto", "desktop", "laptop"])
     parser.add_argument("--private-repo", type=Path, help="private checkout location (remembered when you resume)")
     args = parser.parse_args()
+    directory = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state"))) / "omarchy-setup/wizard"
+    if args.finish:
+        if args.plan or args.restart or args.public_only or args.defer_checks:
+            parser.error("--finish cannot be combined with setup execution options")
+        mark_setup_complete(directory)
+        print("First-login setup is finished and will no longer open automatically. Saved progress is retained.")
+        return 0
     requested_private = args.private_repo or os.environ.get("OMARCHY_PRIVATE_SETUP_DIR")
     workspace = Path(os.environ.get("WORKSPACE_DIR", str(Path.home() / "workspace"))).expanduser().resolve()
     private = Path(requested_private or workspace / "omarchy-setup-private").expanduser().resolve()
@@ -779,7 +794,6 @@ def main():
         parser.error("run as your desktop user; individual setup scripts request sudo when needed")
     if not shutil.which("script"):
         parser.error("util-linux 'script' is required for interactive prompts and logs")
-    directory = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state"))) / "omarchy-setup/wizard"
     state = State(directory, args.restart)
     ui = UI()
     try:

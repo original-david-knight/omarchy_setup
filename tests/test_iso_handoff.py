@@ -124,6 +124,18 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(self.run_launcher().returncode, 0)
         self.assertTrue(self.complete.is_file())
 
+    def test_finish_repairs_completed_setup_without_running_installers_or_resetting_progress(self):
+        progress = self.state / 'omarchy-setup/wizard/progress.json'
+        progress.parent.mkdir(parents=True)
+        progress.write_text('{"fixture": "completed progress"}\n')
+        result = subprocess.run([str(ROOT / 'setup.sh'), '--finish'], env=self.env,
+                                stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(self.complete.is_file())
+        self.assertEqual(progress.read_text(), '{"fixture": "completed progress"}\n')
+        self.assertEqual(self.run_launcher('--launch').returncode, 0)
+        self.assertFalse(self.ledger.exists())
+
     def test_boot_hook_requests_an_interactive_terminal(self):
         result = self.run_launcher('--launch')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
