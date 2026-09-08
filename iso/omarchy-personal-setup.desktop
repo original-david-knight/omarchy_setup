@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Finish Omarchy Setup
+Comment=Download the latest personal setup and finish configuring this computer
+Exec=/usr/local/bin/omarchy-personal-setup
+Terminal=true
+Icon=utilities-terminal
+Categories=System;Settings;

@@ -18,7 +18,7 @@ class InstallerInputTests(unittest.TestCase):
         self.root = Path(temporary.name)
         self.commands = self.root / 'commands'
         self.commands.mkdir()
-        for name in ('install_all.sh', 'install_agent_tools.sh', 'install_vscode_extensions.sh'):
+        for name in ('install_all.sh', 'install_agent_tools.sh', 'install_vscode_extensions.sh', 'update_omarchy.sh'):
             shutil.copy2(ROOT / name, self.root / name)
         (self.root / 'packages').mkdir()
         self.manifest = self.root / 'packages/agent-tools.json'
@@ -54,6 +54,12 @@ fi
             expected.extend([f'mise use --global {package}@latest', f'omarchy mise install {package} {binary}'])
         expected.append('mise exec npm:playwright -- playwright install chromium')
         self.assertEqual(self.ledger.read_text().splitlines(), expected)
+
+    def test_omarchy_update_uses_official_command_and_preserves_failures(self):
+        self.command('omarchy', 'printf "%s\\n" "$*" >> "$INPUT_TEST_LEDGER"; exit 42')
+        result = self.run_installer('update_omarchy.sh')
+        self.assertEqual(result.returncode, 42)
+        self.assertEqual(self.ledger.read_text().splitlines(), ['update -y'])
 
     def test_first_and_last_package_prompts_receive_answers_without_skipping_tools(self):
         self.assert_all_tools_installed(self.run_installer('install_agent_tools.sh'))

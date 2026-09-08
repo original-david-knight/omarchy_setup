@@ -11,12 +11,14 @@ cd ~/omarchy_setup
 ./setup.sh
 ```
 
-The terminal wizard collects your profile and setup choices first, prepares
-administrator/SSH access, and fetches the private setup before starting the
-main installs. It then runs the public and private installs unattended, with
-live output and private logs. Failed installs are collected for the end report;
-remaining independent steps continue. Account sign-ins and every “open it and
-verify it works” check happen after installation.
+The terminal wizard runs `omarchy update -y` first, then checks the updated
+baseline and prepares administrator/SSH access. It finishes public application
+installs (including Chrome), configuration,
+and readiness checks before requesting GitHub access. Once public setup passes,
+it fetches and prepares private setup, installs its tools, and guides account
+sign-ins and opening checks. Application installs run unattended with live
+output and private logs; failures are recorded while independent steps continue.
+If Omarchy offers a reboot during its update, defer it until setup finishes.
 
 Run `./setup.sh` again to resume. Completed steps are retained, and changes to
 a script or its declared inputs cause that step and subsequent steps to run
@@ -36,6 +38,30 @@ pass. Failures and skipped dependencies appear in the final report; sign-ins
 you defer remain pending. Read [the wizard guide](docs/setup-wizard.md)
 for resume behavior, logs, custom paths, and the original script-driven flow.
 `./go.sh` and the individual scripts remain available for that flow.
+
+For a USB installer handoff, bundle `bootstrap.sh` and launch it in a terminal
+as the new desktop user after the first graphical login. It clones this public
+repository from GitHub `main` into `~/omarchy_setup`, or refreshes an existing
+clean `main` checkout with a fast-forward update, then runs `setup.sh`. The
+setup revision comes from GitHub at launch time, so updating setup does not
+require rebuilding the USB image. Build the installer with `./iso/build.sh`;
+see [the USB installer guide](docs/usb-installer.md) for the build, first-login
+handoff, and VM validation.
+
+```sh
+bash /path/to/bundled/bootstrap.sh --profile laptop
+```
+
+`OMARCHY_SETUP_DIR` selects a different absolute checkout path. The bootstrap
+uses public HTTPS without GitHub authentication and passes arguments to the
+wizard. Local changes, other branches, and local-only commits stop the refresh
+without being overwritten. If GitHub is unavailable, it waits while you connect
+Wi-Fi, then continues automatically. Ctrl+C pauses setup. Run
+`omarchy-personal-setup` to resume an ISO installation, or explicitly run the
+existing `setup.sh` to use a cached checkout. A bootstrap `--plan` still
+clones or updates files; `./setup.sh --plan` remains the read-only preview.
+The USB needs only this public launcher. Private setup and credentials are
+fetched later through the wizard's existing GitHub authentication handoff.
 
 Everything App is private. Its source checkout, build setup, and passcode live
 in `omarchy-setup-private`. This public repository supplies widgets and launch
