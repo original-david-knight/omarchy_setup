@@ -418,6 +418,42 @@ class WizardTests(unittest.TestCase):
             engine.run_group('Accounts', 'private', self.private, [step])
         action.assert_not_called()
 
+    def test_revisiting_pending_connection_does_not_reopen_it_but_retry_does(self):
+        engine = self.make(FakeUI(['n', '1', 'n']))
+        step = {'id': 'login', 'label': 'Fixture login', 'kind': 'login', 'allow_later': True,
+                'probe': {'argv': ['fixture', 'status']},
+                'actions': [{'label': 'Connect', 'argv': ['fixture', 'login']}]}
+        with patch.object(engine, 'probe', return_value=False), patch.object(engine, 'action', return_value=True) as action:
+            engine.run_group('Accounts', 'private', self.private, [step])
+            engine.run_group('Accounts', 'private', self.private, [step])
+        # Once automatically, once by an explicit Retry; the revisit adds no launch.
+        self.assertEqual(action.call_count, 2)
+
+    def test_failed_connection_launch_can_be_attempted_again_on_revisit(self):
+        engine = self.make(FakeUI(['n', 'n']))
+        step = {'id': 'login', 'label': 'Fixture login', 'kind': 'login', 'allow_later': True,
+                'probe': {'argv': ['fixture', 'status']},
+                'actions': [{'label': 'Connect', 'argv': ['fixture', 'login']}]}
+        with patch.object(engine, 'probe', return_value=False), patch.object(engine, 'action', return_value=False) as action:
+            engine.run_group('Accounts', 'private', self.private, [step])
+            engine.run_group('Accounts', 'private', self.private, [step])
+        self.assertEqual(action.call_count, 2)
+
+    def test_required_browser_login_blocks_later_actions_until_live_probe_passes(self):
+        engine = self.make(FakeUI(['p']))
+        step = {'id': 'browser', 'label': 'Fixture browser', 'kind': 'login', 'allow_later': False,
+                'probe': {'argv': ['fixture', 'browser-check']},
+                'actions': [{'label': 'Connect', 'argv': ['fixture', 'open']}]}
+        later = {'id': 'later', 'label': 'Later app', 'kind': 'manual', 'ack': 'later',
+                 'actions': [{'label': 'Open', 'argv': ['later']}]}
+        engine.acknowledge('browser')
+        with patch.object(engine, 'probe', return_value=False), patch.object(engine, 'action', return_value=True) as action:
+            with self.assertRaises(wizard.Pause):
+                engine.run_group('Accounts', 'private', self.private, [step, later])
+        action.assert_called_once()
+        self.assertEqual(self.state.data['steps']['private.browser']['status'], 'pending')
+        self.assertNotIn('private.later', self.state.data['steps'])
+
     def test_manual_apps_open_before_asking_for_readiness_acknowledgment(self):
         engine = self.make(FakeUI(['d']))
         step = {'id': 'app', 'label': 'Fixture app', 'kind': 'manual', 'ack': 'fixture',

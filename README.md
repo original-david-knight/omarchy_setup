@@ -23,7 +23,8 @@ If Omarchy offers a reboot during its update, defer it until setup finishes.
 
 Run `./setup.sh` again to resume. Completed steps are retained, and changes to
 a script or its declared inputs cause that step and subsequent steps to run
-again. Account connections and readiness are checked on every run. A profile
+again. Account connections and readiness are checked on every run. Returning to a pending
+connection within the wizard reuses its first launch; use Retry to open it again. A profile
 change reapplies configuration while retaining completed package installs.
 
 ```sh

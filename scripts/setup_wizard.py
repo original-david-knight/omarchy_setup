@@ -327,6 +327,7 @@ class Wizard:
         self.order, self.available = [], []
         self.chain = "wizard-v2"
         self.pending = []
+        self.started_actions = set()
         self.ack_path = home / ".local/state/omarchy-setup-private/manual-readiness.json"
 
     def expand(self, value):
@@ -531,14 +532,26 @@ class Wizard:
                 time.sleep(0.2)
                 if process.poll() not in (None, 0):
                     self.ui.say("The application could not start. Open it from the application launcher.")
+                    return False
             except OSError:
                 self.ui.say("The application could not start. Open it from the application launcher.")
+                return False
         else:
             result = self.runner.run(self.command(action["argv"]), root, step_id + ".action")
             if result.code in (130, -signal.SIGINT):
                 raise Pause(130)
             if result.code:
                 self.ui.say(f"Action exited {result.code}. Log: {result.log}")
+                return False
+        return True
+
+    def start_action(self, root, action, step_id):
+        key = (step_id, str(root), json.dumps(action, sort_keys=True))
+        if key in self.started_actions:
+            self.ui.say("This connection was already opened. Use Retry if you need to open it again.")
+            return
+        if self.action(root, action, step_id) is not False:
+            self.started_actions.add(key)
 
     def manual(self, root, step, step_id, signature, prompt=True):
         kind = step.get("kind")
@@ -567,11 +580,11 @@ class Wizard:
         self.ui.say(step.get("instructions", ""))
         if kind == "github":
             self.ui.say(f"\nPublic key ({key}):\n{key.read_text().strip()}\n\nGitHub key settings: https://github.com/settings/ssh/new")
-            self.action(root, {"argv": ["xdg-open", "https://github.com/settings/ssh/new"], "launch": True}, step_id)
+            self.start_action(root, {"argv": ["xdg-open", "https://github.com/settings/ssh/new"], "launch": True}, step_id)
         # Start the connection immediately. Retry and pause controls remain
         # available if authentication fails or needs to be deferred.
         for action in step.get("actions", []):
-            self.action(root, action, step_id)
+            self.start_action(root, action, step_id)
         while True:
             options = {"c": "Check now"} if step.get("probe") else {"d": "I opened it and verified that it works"}
             if kind == "github":
