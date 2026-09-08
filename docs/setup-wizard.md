@@ -33,6 +33,19 @@ util-linux `script`, both available on the supported baseline.
    installs remain failures even if a later probe succeeds. Deferred account
    checks remain pending.
 
+Connection steps start their sign-in commands or open their applications
+automatically. When a probe can detect the connection, the wizard checks it
+while you sign in and advances without another confirmation. Retry, pause,
+and “Do this later” controls remain available. Applications without a reliable
+probe still need a readiness acknowledgment. `--defer-checks` continues to skip
+unverified application sign-ins without launching them.
+
+Chrome accounts are matched by the signed-in email across every Chrome profile;
+profile directory numbers are never assigned to an account by the wizard.
+Required emails and personal/work GitHub CLI identities live in the private
+repository. GitHub CLI checks validate both saved accounts individually, even
+when only one is active.
+
 Account steps offer “Do this later.” Declining repository access leaves its
 unmet dependent steps skipped while independent work proceeds. Build
 prerequisites are treated the same way. For application connections without an

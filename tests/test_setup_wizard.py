@@ -7,6 +7,7 @@ from pathlib import Path
 import pty
 import select
 import signal
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -33,6 +34,11 @@ class FakeUI(wizard.UI):
         choice = next(self.choices)
         assert choice in options, (choice, options)
         return choice
+
+    def wait_for_connection(self, probe, options):
+        if probe():
+            return 'connected'
+        return self.choose('Waiting for connection', options, 'c')
 
 
 class FakeRunner:
@@ -164,12 +170,12 @@ class WizardTests(unittest.TestCase):
         (self.home / '.ssh/key.pub').write_text('ssh-ed25519 public-test-key\n')
         step = {'id': 'github', 'label': 'GitHub', 'kind': 'github', 'key': str(self.home / '.ssh/key.pub'), 'repo': 'git@example.invalid:private.git'}
         engine = self.make(FakeUI(['c', 'p']), FakeRunner(self.root, [128]))
-        with patch.object(engine, 'probe', return_value=False):
+        with patch.object(engine, 'probe', return_value=False), patch.object(engine, 'action'):
             with self.assertRaises(wizard.Pause):
                 engine.run_group('GitHub', 'handoff', self.public, [step])
         self.assertEqual(self.state.data['steps']['handoff.github']['status'], 'pending')
         engine = self.make(FakeUI(['c']), FakeRunner(self.root, [0]))
-        with patch.object(engine, 'probe', return_value=False):
+        with patch.object(engine, 'probe', return_value=False), patch.object(engine, 'action'):
             engine.run_group('GitHub', 'handoff', self.public, [step])
         self.assertEqual(self.state.data['steps']['handoff.github']['status'], 'done')
 
@@ -392,6 +398,77 @@ class WizardTests(unittest.TestCase):
         self.assertEqual(self.state.data['steps']['private.browser_profiles']['status'], 'pending')
         self.assertEqual(self.state.data['steps']['private.browser.0']['status'], 'pending')
         self.assertEqual(engine.summary(), 3)
+
+    def test_connection_action_starts_automatically_and_advances_after_login(self):
+        engine = self.make()
+        step = {'id': 'login', 'label': 'Fixture login', 'kind': 'login',
+                'probe': {'argv': ['fixture', 'status']},
+                'actions': [{'label': 'Connect', 'argv': ['fixture', 'login']}]}
+        with patch.object(engine, 'probe', side_effect=[False, True]), patch.object(engine, 'action') as action:
+            engine.run_group('Accounts', 'private', self.private, [step])
+        action.assert_called_once()
+        self.assertEqual(self.state.data['steps']['private.login']['status'], 'done')
+
+    def test_connected_account_does_not_launch_login_again(self):
+        engine = self.make()
+        step = {'id': 'login', 'label': 'Fixture login', 'kind': 'login',
+                'probe': {'argv': ['fixture', 'status']},
+                'actions': [{'label': 'Connect', 'argv': ['fixture', 'login']}]}
+        with patch.object(engine, 'probe', return_value=True), patch.object(engine, 'action') as action:
+            engine.run_group('Accounts', 'private', self.private, [step])
+        action.assert_not_called()
+
+    def test_manual_apps_open_before_asking_for_readiness_acknowledgment(self):
+        engine = self.make(FakeUI(['d']))
+        step = {'id': 'app', 'label': 'Fixture app', 'kind': 'manual', 'ack': 'fixture',
+                'actions': [{'label': 'Open', 'argv': ['fixture'], 'launch': True}]}
+        with patch.object(engine, 'action') as action:
+            engine.run_group('Accounts', 'private', self.private, [step])
+        action.assert_called_once()
+        self.assertTrue(engine.acknowledged('fixture'))
+
+    def test_login_interrupt_pauses_without_launching_later_actions(self):
+        engine = self.make(runner=FakeRunner(self.root, [130]))
+        step = {'id': 'login', 'label': 'Fixture login', 'kind': 'login',
+                'probe': {'argv': ['fixture', 'status']},
+                'actions': [{'label': 'Connect', 'argv': ['fixture', 'login']},
+                            {'label': 'Later', 'argv': ['fixture', 'later']}]}
+        with patch.object(engine, 'probe', return_value=False), self.assertRaises(wizard.Pause):
+            engine.run_group('Accounts', 'private', self.private, [step])
+        self.assertEqual(len(engine.runner.calls), 1)
+        self.assertNotEqual(self.state.data['steps'].get('private.login', {}).get('status'), 'done')
+
+    def test_chrome_sign_in_is_detected_in_a_different_profile_without_a_prompt(self):
+        helper = self.public / 'bin/bin/chrome-profile'
+        helper.parent.mkdir(parents=True)
+        shutil.copy2(ROOT / 'bin/bin/chrome-profile', helper)
+        cache = self.home / '.config/google-chrome/Local State'
+        cache.parent.mkdir(parents=True)
+        cache.write_text(json.dumps({'profile': {'info_cache': {}}}))
+        # Older manifests may retain a directory, which must not bind identity.
+        (self.private / 'profiles.json').write_text(json.dumps([
+            {'directory': 'Default', 'email': 'personal@example.invalid'},
+            {'email': 'work@example.invalid'}]))
+        engine = self.make()
+        engine.runner.env['HOME'] = str(self.home)
+        def sign_in(root, action, step_id):
+            data = json.loads(cache.read_text())
+            email = action['argv'][2]
+            directory = 'Profile 17' if email.startswith('personal') else 'Profile 9'
+            data['profile']['info_cache'][directory] = {'user_name': email}
+            cache.write_text(json.dumps(data))
+        step = {'id': 'browser_profiles', 'label': 'Chrome profiles', 'kind': 'browser_profiles', 'file': 'profiles.json'}
+        with patch.object(engine, 'action', side_effect=sign_in) as action:
+            engine.run_group('Accounts', 'private', self.private, [step])
+        self.assertEqual(action.call_count, 2)
+        self.assertEqual(self.state.data['steps']['private.browser_profiles']['status'], 'done')
+
+    def test_connection_wait_detects_success_without_keyboard_input(self):
+        ui = FakeUI()
+        with patch.object(wizard.select, 'select', return_value=([], [], [])), \
+                patch('builtins.input', side_effect=AssertionError('No prompt expected')):
+            probe = iter([False, True])
+            self.assertEqual(wizard.UI.wait_for_connection(ui, lambda: next(probe), {'p': 'Pause'}), 'connected')
 
     def test_invalid_inputs_are_reported_and_independent_installs_continue(self):
         steps = self.steps()

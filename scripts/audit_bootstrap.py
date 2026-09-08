@@ -123,7 +123,9 @@ INSTALLER
 
 def stow_probes(root):
     repo = root / "public"
-    shutil.copytree(PUBLIC, repo, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+    # Generated installer images are unrelated to Stow and can fill /tmp when
+    # the fixture is copied a second time for the folded-directory test.
+    shutil.copytree(PUBLIC, repo, ignore=shutil.ignore_patterns(".git", "__pycache__", "dist", "iso-test-results"))
     commands = root / "stow-commands"
     commands.mkdir()
     # Test actual Stow behavior while excluding desktop activation and package

@@ -15,12 +15,15 @@ if (( (8#$config_mode & 077) != 0 )); then
 fi
 
 # This file is deliberately outside the stowed repository. It owns the local
-# Chrome profile and work-service origins without putting identity details in
+# Chrome account and work-service origins without putting identity details in
 # source control.
 # shellcheck disable=SC1090
 source "$config"
 
-: "${WORK_CHROME_PROFILE:?WORK_CHROME_PROFILE is required}"
+[[ -n ${WORK_CHROME_EMAIL:-} || -n ${WORK_CHROME_PROFILE:-} ]] || {
+  echo 'WORK_CHROME_EMAIL is required in work widget configuration.' >&2
+  exit 1
+}
 : "${WORK_GITHUB_ORIGIN:?WORK_GITHUB_ORIGIN is required}"
 : "${WORK_JIRA_ORIGIN:?WORK_JIRA_ORIGIN is required}"
 
@@ -47,5 +50,10 @@ if [[ $url != "$github_origin" && $url != "$github_origin"/* &&
   exit 2
 fi
 
-google-chrome-stable --profile-directory="$WORK_CHROME_PROFILE" --new-tab "$url" \
-  >/dev/null 2>&1 &
+if [[ -n ${WORK_CHROME_EMAIL:-} ]]; then
+  exec "$(dirname -- "${BASH_SOURCE[0]}")/chrome-profile" --email "$WORK_CHROME_EMAIL" -- --new-tab "$url"
+else
+  # Retain compatibility with older private configurations until refreshed.
+  google-chrome-stable --profile-directory="$WORK_CHROME_PROFILE" --new-tab "$url" \
+    >/dev/null 2>&1 &
+fi

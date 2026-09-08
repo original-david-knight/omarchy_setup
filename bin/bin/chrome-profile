@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+"""Find or open a Chrome profile by its signed-in email, without editing Chrome."""
+import argparse
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+
+def profile_cache(home):
+    path = home / '.config/google-chrome/Local State'
+    if not path.exists():
+        return {}
+    cache = json.loads(path.read_text()).get('profile', {}).get('info_cache', {})
+    if not isinstance(cache, dict):
+        raise ValueError('Invalid Chrome profile cache')
+    return {name: entry for name, entry in cache.items()
+            if isinstance(name, str) and name not in ('', '.', '..')
+            and '/' not in name and '\\' not in name
+            and isinstance(entry, dict)}
+
+
+def find_profile(cache, email):
+    return next((name for name, entry in cache.items()
+                 if isinstance(entry.get('user_name'), str)
+                 and entry['user_name'].strip().casefold() == email.strip().casefold()), None)
+
+
+def unsigned_profile(cache, home):
+    # Reuse an unsigned profile on retries; leave signed-in profiles alone.
+    for name, entry in cache.items():
+        if not entry.get('user_name') and not entry.get('is_ephemeral'):
+            return name
+    chrome = home / '.config/google-chrome'
+    if not cache and not (chrome / 'Default').exists():
+        return 'Default'
+    index = 1
+    while f'Profile {index}' in cache or (chrome / f'Profile {index}').exists():
+        index += 1
+    return f'Profile {index}'
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--email', required=True)
+    parser.add_argument('--check', action='store_true', help='print the matching directory; exit 3 if missing')
+    parser.add_argument('--create', action='store_true', help='open an unsigned profile when the account is missing')
+    parser.add_argument('chrome_args', nargs=argparse.REMAINDER)
+    args = parser.parse_args()
+    if not args.email.strip():
+        parser.error('email cannot be empty')
+    home = Path.home()
+    try:
+        cache = profile_cache(home)
+        directory = find_profile(cache, args.email)
+    except (OSError, ValueError, AttributeError):
+        print('Chrome profile information is not readable yet. Close Chrome and retry.', file=sys.stderr)
+        return 3
+    if args.check:
+        if directory:
+            print(directory)
+            return 0
+        return 3
+    if directory is None:
+        if not args.create:
+            print(f'Sign into Chrome as {args.email}, then retry.', file=sys.stderr)
+            return 3
+        directory = unsigned_profile(cache, home)
+    extra = args.chrome_args
+    if extra[:1] == ['--']:
+        extra = extra[1:]
+    try:
+        subprocess.Popen(['google-chrome-stable', f'--profile-directory={directory}',
+                          *(extra or ['chrome://settings/people'])],
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+    except OSError as error:
+        print(f'Could not open Chrome: {error}', file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
