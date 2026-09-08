@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+state_dir=${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-setup/iso
+bootstrap=/usr/local/share/omarchy-setup/bootstrap.sh
+
+if [[ -f $state_dir/complete ]]; then
+  exit 0
+fi
+
+if [[ ${1:-} == --launch ]]; then
+  exec omarchy-launch-terminal /usr/local/bin/omarchy-personal-setup
+fi
+
+umask 077
+mkdir -p -- "$state_dir"
+exec 9>"$state_dir/launcher.lock"
+flock -n 9 || exit 0
+# Another terminal may have completed setup while this terminal was opening.
+[[ ! -f $state_dir/complete ]] || exit 0
+
+printf '\nFinish setting up this computer\n\n'
+printf 'Setup will download the current configuration from GitHub.\n'
+printf 'If Wi-Fi is not connected, setup will wait here while you connect it.\n'
+printf 'You can restart setup later with: omarchy-personal-setup\n\n'
+
+# The stock first-login finalizer and post-boot hooks start concurrently.
+# Let that process finish before our wizard starts changing user services.
+while pgrep -u "$(id -u)" -f '/omarchy-provision-first-run( |$)' >/dev/null; do
+  printf 'Waiting for Omarchy to finish its initial desktop setup...\n'
+  sleep 3
+done
+
+status=0
+bash "$bootstrap" "$@" || status=$?
+if ((status == 0)); then
+  : >"$state_dir/complete"
+  printf '\nSetup is complete. It will no longer open automatically.\n'
+else
+  printf '\nSetup is still pending (exit %s).\n' "$status"
+  printf 'Run omarchy-personal-setup to retry, or log in again.\n'
+fi
+printf '\nPress Enter to close this window.'
+read -r _ || true
+exit "$status"

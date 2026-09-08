@@ -2,11 +2,20 @@
   "version": 1,
   "install": [
     {
+      "id": "update_omarchy",
+      "label": "Update Omarchy and system packages",
+      "script": "update_omarchy.sh",
+      "phase": "prepare"
+    },
+    {
       "id": "check_baseline",
       "label": "Check the Omarchy installation",
       "script": "check_baseline.sh",
       "phase": "prepare",
-      "always": true
+      "always": true,
+      "requires": [
+        "public.update_omarchy"
+      ]
     },
     {
       "id": "setup_sudo",
@@ -27,7 +36,8 @@
         "packages/aur.txt"
       ],
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     },
     {
@@ -52,7 +62,8 @@
       "label": "Install Chrome",
       "script": "install_chrome.sh",
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     },
     {
@@ -60,7 +71,8 @@
       "label": "Install Yazi and the file picker",
       "script": "install_yazi.sh",
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     },
     {
@@ -68,7 +80,8 @@
       "label": "Install Brave",
       "script": "install_brave.sh",
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     },
     {
@@ -76,7 +89,8 @@
       "label": "Install configuration deployment tools",
       "script": "install_stow.sh",
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     },
     {
@@ -84,7 +98,8 @@
       "label": "Install tmux",
       "script": "install_tmux.sh",
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     },
     {
@@ -92,7 +107,8 @@
       "label": "Install Zellij",
       "script": "install_zellij.sh",
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     },
     {
@@ -100,7 +116,8 @@
       "label": "Install Herdr",
       "script": "install_herdr.sh",
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     },
     {
@@ -108,7 +125,8 @@
       "label": "Install Hunk",
       "script": "install_hunk.sh",
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     },
     {
@@ -116,7 +134,8 @@
       "label": "Install Listening and media players",
       "script": "install_listening.sh",
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     },
     {
@@ -124,7 +143,8 @@
       "label": "Install Obsidian",
       "script": "install_obsidian.sh",
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     },
     {
@@ -132,7 +152,8 @@
       "label": "Install npm",
       "script": "install_npm.sh",
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     },
     {
@@ -140,7 +161,8 @@
       "label": "Install Claude Code",
       "script": "install_claude_code.sh",
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     },
     {
@@ -148,7 +170,8 @@
       "label": "Install Codex",
       "script": "install_codex.sh",
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     },
     {
@@ -159,7 +182,8 @@
         "packages/agent-tools.json"
       ],
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     },
     {
@@ -167,7 +191,8 @@
       "label": "Install VS Code",
       "script": "install_vscode.sh",
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     },
     {
@@ -179,7 +204,8 @@
       ],
       "requires": [
         "public.check_baseline",
-        "public.install_vscode"
+        "public.install_vscode",
+        "public.update_omarchy"
       ]
     },
     {
@@ -187,7 +213,8 @@
       "label": "Install Cursor",
       "script": "install_cursor.sh",
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     },
     {
@@ -198,7 +225,8 @@
         "toolchains.json"
       ],
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     },
     {
@@ -209,7 +237,8 @@
         "toolchains.json"
       ],
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     },
     {
@@ -217,7 +246,8 @@
       "label": "Enable Bluetooth",
       "script": "setup_bloothtooth.sh",
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     },
     {
@@ -225,7 +255,8 @@
       "label": "Install audio utilities",
       "script": "install_alsa_utils.sh",
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     },
     {
@@ -233,7 +264,8 @@
       "label": "Configure mouse recovery",
       "script": "install_mouse_fix.sh",
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     },
     {
@@ -241,7 +273,8 @@
       "label": "Install PostgreSQL",
       "script": "install_postresql.sh",
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     },
     {
@@ -249,7 +282,8 @@
       "label": "Install Slack",
       "script": "install_slack.sh",
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     },
     {
@@ -257,7 +291,8 @@
       "label": "Install Discord",
       "script": "install_discord.sh",
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     },
     {
@@ -265,7 +300,8 @@
       "label": "Install the voice input model",
       "script": "install_voice.sh",
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     },
     {
@@ -273,7 +309,8 @@
       "label": "Enable desktop support services",
       "script": "install_services.sh",
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     }
   ],
@@ -309,7 +346,8 @@
         "{home}/.config/omarchy/shell.json"
       ],
       "requires": [
-        "public.check_baseline"
+        "public.check_baseline",
+        "public.update_omarchy"
       ]
     },
     {

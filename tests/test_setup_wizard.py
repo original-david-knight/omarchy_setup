@@ -247,22 +247,28 @@ class WizardTests(unittest.TestCase):
         def script(root, name, body):
             (root / name).write_text('#!/bin/bash\nset -eu\n' + body)
         script(self.public, 'install.sh', 'echo public >> "$HOME/ledger"\n')
+        script(self.public, 'configuration.sh', 'echo configuration >> "$HOME/ledger"\n')
         script(self.public, 'setup_workspace.sh', 'test "$1" = --private-only\necho preparation >> "$HOME/ledger"\n')
         script(self.public, 'after_github_key_configured.sh', 'echo handoff >> "$HOME/ledger"\n')
         script(self.private, 'private.sh', 'echo private >> "$HOME/ledger"\n')
         report = json.dumps({'version': 1, 'failed': 0, 'pending': 0, 'checks': []})
+        script(self.public, 'verify.sh', 'echo "public readiness" >> "$HOME/ledger"\n' + "printf '%s\\n' '" + report + "'\n")
         script(self.private, 'verify.sh', "printf '%s\\n' '" + report + "'\n")
         (self.public / 'setup').mkdir()
-        (self.public / 'setup/steps.json').write_text(json.dumps({'version': 1, 'install': [{'id': 'install', 'label': 'Install', 'script': 'install.sh'}], 'configure': []}))
+        (self.public / 'setup/steps.json').write_text(json.dumps({'version': 1, 'install': [{'id': 'install', 'label': 'Install', 'script': 'install.sh'}], 'configure': [{'id': 'configuration', 'label': 'Configure', 'script': 'configuration.sh'}, {'id': 'verify', 'label': 'Public readiness', 'kind': 'verify', 'script': 'verify.sh'}]}))
         (self.private / 'setup-wizard.json').write_text(json.dumps({'version': 1, 'work_repo': 'fixture', 'steps': [{'id': 'install', 'label': 'Private', 'script': 'private.sh'}, {'id': 'verify', 'label': 'Verify', 'script': 'verify.sh', 'kind': 'verify'}]}))
         (self.home / '.ssh').mkdir()
         (self.home / '.ssh/id_github.pub').write_text('public-test-key\n')
         runner = wizard.Runner(self.root / 'logs', dict(os.environ, HOME=str(self.home)))
+        def github_ready(_):
+            with (self.home / 'ledger').open('a') as log:
+                log.write('github\n')
+            return True
         for _ in range(2):
             engine = self.make(runner=runner)
-            with patch.object(engine, 'probe', return_value=True):
+            with patch.object(engine, 'probe', side_effect=github_ready):
                 self.assertEqual(engine.run(), 0)
-        self.assertEqual((self.home / 'ledger').read_text().splitlines(), ['preparation', 'public', 'handoff', 'private'])
+        self.assertEqual((self.home / 'ledger').read_text().splitlines(), ['public', 'configuration', 'public readiness', 'github', 'preparation', 'handoff', 'private', 'public readiness', 'github'])
         for log in (self.root / 'logs').iterdir():
             self.assertEqual(log.stat().st_mode & 0o777, 0o600)
 
@@ -276,7 +282,7 @@ class WizardTests(unittest.TestCase):
         (self.home / '.ssh').mkdir(exist_ok=True)
         (self.home / '.ssh/id_github.pub').write_text('ssh-ed25519 fixture\n')
 
-    def test_all_preparation_precedes_installs_and_manual_checks_are_last(self):
+    def test_public_setup_precedes_private_preparation_and_manual_checks_are_last(self):
         public = self.steps()
         public[1]['phase'] = 'prepare'
         private = [
@@ -305,8 +311,8 @@ class WizardTests(unittest.TestCase):
         engine = self.make(ui, runner)
         with patch.object(engine, 'probe', return_value=True):
             self.assertEqual(engine.run(), 0)
-        self.assertEqual(events, ['public.two', 'handoff.clone', 'consent', 'private.prepare',
-                                  'public.one', 'handoff.workspaces', 'private.install', 'opening-check'])
+        self.assertEqual(events, ['public.two', 'public.one', 'handoff.clone', 'consent', 'private.prepare',
+                                  'handoff.workspaces', 'private.install', 'opening-check'])
         self.assertEqual(runner.env['OMARCHY_FIXTURE_OPTION'], '1')
         self.assertTrue(all(interactive == (label in ('public.two', 'handoff.clone', 'private.prepare'))
                             for label, interactive, _ in runner.modes))
@@ -314,11 +320,52 @@ class WizardTests(unittest.TestCase):
     def test_private_checkout_failure_does_not_prevent_public_installs(self):
         public = self.steps()
         self.fixture_plan(public)
-        runner = FakeRunner(self.root, [42, 0, 0])
+        runner = FakeRunner(self.root, [0, 0, 42])
         engine = self.make(runner=runner)
         with patch.object(engine, 'probe', return_value=True):
             self.assertEqual(engine.run(), 1)
-        self.assertEqual([call[1] for call in runner.calls], ['handoff.clone', 'public.one', 'public.two'])
+        self.assertEqual([call[1] for call in runner.calls], ['public.one', 'public.two', 'handoff.clone'])
+
+    def test_public_failure_leaves_github_and_private_setup_until_retry(self):
+        self.fixture_plan(self.steps())
+        runner = FakeRunner(self.root, [42, 0])
+        engine = self.make(runner=runner)
+        with patch.object(engine, 'probe') as probe:
+            self.assertEqual(engine.run(), 1)
+        probe.assert_not_called()
+        self.assertEqual([call[1] for call in runner.calls], ['public.one', 'public.two'])
+        self.assertNotIn('handoff.github', self.state.data['steps'])
+        retry = self.make(runner=FakeRunner(self.root))
+        with patch.object(retry, 'probe', return_value=True):
+            retry.run()
+        self.assertEqual(self.state.data['steps']['handoff.github']['status'], 'done')
+
+    def test_failed_update_blocks_public_installs_and_github(self):
+        plan = json.loads((ROOT / 'setup/steps.json').read_text())
+        self.fixture_plan(plan['install'])
+        runner = FakeRunner(self.root, [42])
+        engine = self.make(runner=runner)
+        with patch.object(engine, 'probe') as probe:
+            self.assertEqual(engine.run(), 1)
+        probe.assert_not_called()
+        self.assertEqual([call[1] for call in runner.calls], ['public.update_omarchy'])
+        for step in ('check_baseline', 'setup_sudo', 'setup_ssh'):
+            self.assertEqual(self.state.data['steps']['public.' + step]['status'], 'blocked')
+        self.assertEqual(self.state.data['steps']['public.install_chrome']['status'], 'blocked')
+        self.assertIn(('public.update_omarchy', True, False), runner.modes)
+
+    def test_successful_update_and_public_installs_are_checkpointed_on_resume(self):
+        plan = json.loads((ROOT / 'setup/steps.json').read_text())
+        steps = [step for step in plan['install'] if step['id'] in
+                 ('check_baseline', 'setup_sudo', 'update_omarchy', 'install_chrome')]
+        self.fixture_plan(steps)
+        first = FakeRunner(self.root)
+        self.assertEqual(self.make(runner=first, public_only=True).run(), 0)
+        self.assertEqual([call[1] for call in first.calls],
+                         ['public.update_omarchy', 'public.check_baseline', 'public.setup_sudo', 'public.install_chrome'])
+        runner = FakeRunner(self.root)
+        self.assertEqual(self.make(runner=runner, public_only=True).run(), 0)
+        self.assertEqual([call[1] for call in runner.calls], ['public.check_baseline', 'public.setup_sudo'])
 
     def test_public_only_failures_do_not_report_success(self):
         self.fixture_plan(self.steps())

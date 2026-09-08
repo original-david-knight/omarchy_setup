@@ -2,6 +2,10 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 
+# Built installers and disposable VM acceptance artifacts.
+/dist/
+/iso-test-results/
+
 # Credentials and local runtime configuration belong in the private setup repo.
 .env
 .env.*

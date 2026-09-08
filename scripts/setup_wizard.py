@@ -627,41 +627,46 @@ class Wizard:
                 load_plan(self.public / "setup/steps.json", "configure")
                 public_steps = public["install"] + public["configure"]
                 private_steps = []
-                self.ui.say("\nPreparation: answer setup and access questions now. Application sign-ins and opening checks come after installation.")
-                self.run_phase("1 · Prepare installation", "public", self.public, public_steps, "prepare")
-                if not self.public_only:
-                    ssh_dependency = ["public.setup_ssh"] if any(step["id"] == "setup_ssh" for step in public_steps) else []
-                    self.run_group("1 · GitHub and private checkout", "handoff", self.public, [
-                        {"id": "github", "label": "Register your personal GitHub key", "kind": "github", "key": "{personal_key}.pub", "repo": "git@github.com:original-david-knight/omarchy-setup-private.git", "requires": ssh_dependency, "instructions": "Sign into your personal GitHub account and add this public SSH key. The wizard will check access to your private setup repository before starting the installs."},
-                        {"id": "clone", "label": "Fetch the private setup plan", "script": "setup_workspace.sh", "args": ["--private-only"], "phase": "prepare", "requires": ["handoff.github"], "destination": "{private}", "required_paths": ["{private}/setup-wizard.json"]}])
-                    path = self.private / "setup-wizard.json"
-                    if self.state.data["steps"].get("handoff.clone", {}).get("status") == "done":
-                        try:
-                            private = load_plan(path, "steps")
-                            private_steps = private["steps"]
-                            self.context["work_repo"] = os.environ.get("REKORDO_REPO_URL", private.get("work_repo", ""))
-                        except WizardError as error:
-                            self.missing_private(str(error))
-                    else:
-                        self.missing_private("Complete the GitHub/private checkout preparation, then rerun ./setup.sh. Public installs will still run.")
-                    self.run_phase("1 · Private preparation", "private", self.private, private_steps, "prepare")
-
-                self.ui.say("\nPreparation finished. You can leave this running. Install failures are recorded and remaining steps continue; no installation prompts will wait for input.")
-                self.run_phase("2 · Install public tools", "public", self.public, public_steps, "install")
-                if not self.public_only:
-                    self.run_group("2 · Prepare workspaces", "handoff", self.public, [
-                        {"id": "workspaces", "label": "Prepare public workspaces and Git remote", "script": "after_github_key_configured.sh", "inputs": ["setup_workspace.sh"], "requires": ["handoff.clone"]}])
-                    self.run_phase("2 · Install private tools", "private", self.private, private_steps, "install")
+                self.ui.say("\nPublic setup runs first: update Omarchy, install applications, apply configuration, and check readiness. GitHub access comes afterward.")
+                self.run_phase("1 · Update Omarchy and prepare setup", "public", self.public, public_steps, "prepare")
+                self.ui.say("\nPublic installation: you can leave this running. Failures are recorded and independent steps continue without installation prompts.")
+                self.run_phase("2 · Install and configure public tools", "public", self.public, public_steps, "install")
+                self.run_phase("2 · Public opening checks", "public", self.public, public_steps, "finish")
+                self.run_phase("2 · Public readiness", "public", self.public, public_steps, "verify")
+                code = self.summary()
+                if code:
+                    self.ui.say("\nFinish the public setup issues above and rerun ./setup.sh. GitHub access and private setup will follow once public setup passes.")
+                    return code
+                self.ui.say("\nPublic setup complete.")
+                if self.public_only:
+                    return 0
+                ssh_dependency = ["public.setup_ssh"] if any(step["id"] == "setup_ssh" for step in public_steps) else []
+                self.run_group("3 · GitHub and private checkout", "handoff", self.public, [
+                    {"id": "github", "label": "Register your personal GitHub key", "kind": "github", "key": "{personal_key}.pub", "repo": "git@github.com:original-david-knight/omarchy-setup-private.git", "requires": ssh_dependency, "instructions": "Public setup is complete, including Chrome. Sign into your personal GitHub account and add this public SSH key. The wizard will check access before starting private setup."},
+                    {"id": "clone", "label": "Fetch the private setup plan", "script": "setup_workspace.sh", "args": ["--private-only"], "phase": "prepare", "requires": ["handoff.github"], "destination": "{private}", "required_paths": ["{private}/setup-wizard.json"]}])
+                path = self.private / "setup-wizard.json"
+                if self.state.data["steps"].get("handoff.clone", {}).get("status") == "done":
+                    try:
+                        private = load_plan(path, "steps")
+                        private_steps = private["steps"]
+                        self.context["work_repo"] = os.environ.get("REKORDO_REPO_URL", private.get("work_repo", ""))
+                    except WizardError as error:
+                        self.missing_private(str(error))
+                else:
+                    self.missing_private("Complete the GitHub/private checkout preparation, then rerun ./setup.sh. Public setup is already complete.")
+                self.run_phase("3 · Private preparation", "private", self.private, private_steps, "prepare")
+                self.ui.say("\nPrivate preparation finished. You can leave this running. Install failures are recorded and remaining steps continue; no installation prompts will wait for input.")
+                self.run_group("4 · Prepare workspaces", "handoff", self.public, [
+                    {"id": "workspaces", "label": "Prepare public workspaces and Git remote", "script": "after_github_key_configured.sh", "inputs": ["setup_workspace.sh"], "requires": ["handoff.clone"]}])
+                self.run_phase("4 · Install private tools", "private", self.private, private_steps, "install")
 
                 self.ui.say("\nInstallation pass finished. Any failures are listed below before the final checks.")
                 self.summary()
-                self.run_phase("3 · Sign-ins and opening checks", "public", self.public, public_steps, "finish")
-                self.run_phase("3 · Sign-ins and opening checks", "private", self.private, private_steps, "finish")
-                self.run_phase("4 · Final readiness", "public", self.public, public_steps, "verify")
-                self.run_phase("4 · Final readiness", "private", self.private, private_steps, "verify")
+                self.run_phase("5 · Sign-ins and opening checks", "private", self.private, private_steps, "finish")
+                self.run_phase("6 · Final readiness", "private", self.private, private_steps, "verify")
                 code = self.summary()
                 if code == 0:
-                    self.ui.say("\nPublic setup complete." if self.public_only else "\nSetup complete — installation and readiness checks passed.")
+                    self.ui.say("\nSetup complete — installation and readiness checks passed.")
                 return code
             except Revisit as request:
                 self.state.invalidate(request.step_id, self.order)
@@ -676,27 +681,31 @@ def preview(public, private, public_only=False):
     print("Omarchy setup — preview (no commands executed, no progress files written)\n")
     public_steps = plan["install"] + plan["configure"]
     private_steps = []
-    print("1 · Preparation and setup questions")
-    for step in public_steps:
-        if phase(step) == "prepare":
-            print("  " + step["label"])
-    if not public_only:
-        print("  Register personal GitHub SSH key and verify private repository access\n  Fetch the private setup plan")
-        if (private / "setup-wizard.json").exists():
-            private_steps = load_plan(private / "setup-wizard.json", "steps")["steps"]
-            for step in private_steps:
-                if phase(step) == "prepare":
-                    print("  " + step["label"])
-        else:
-            print("  Private tool and account steps will load after the checkout is fetched.")
-    for selected, title in [("install", "2 · Unattended installation; failures are collected"),
-                            ("finish", "3 · Sign-ins and opening checks"),
-                            ("verify", "4 · Final readiness and failure report")]:
+    for selected, title in [("prepare", "1 · Update Omarchy and prepare setup"),
+                            ("install", "2 · Install and configure public tools"),
+                            ("finish", "2 · Public opening checks"),
+                            ("verify", "2 · Public readiness")]:
         print("\n" + title)
         for step in public_steps:
             if phase(step) == selected:
                 print("  " + step["label"])
-        if selected == "install" and not public_only:
+    if public_only:
+        return
+    print("\nPublic setup must pass before GitHub access and private setup.")
+    print("\n3 · GitHub and private preparation")
+    print("  Register personal GitHub SSH key and verify private repository access\n  Fetch the private setup plan")
+    if (private / "setup-wizard.json").exists():
+        private_steps = load_plan(private / "setup-wizard.json", "steps")["steps"]
+        for step in private_steps:
+            if phase(step) == "prepare":
+                print("  " + step["label"])
+    else:
+        print("  Private tool and account steps will load after the checkout is fetched.")
+    for selected, title in [("install", "4 · Unattended private installation; failures are collected"),
+                            ("finish", "5 · Sign-ins and opening checks"),
+                            ("verify", "6 · Final readiness and failure report")]:
+        print("\n" + title)
+        if selected == "install":
             print("  Prepare public workspaces and Git remote")
         for step in private_steps:
             if phase(step) == selected:
@@ -734,7 +743,7 @@ def main():
         workspace = Path(os.environ.get("WORKSPACE_DIR", state.data.get("workspace_dir", str(workspace)))).expanduser().resolve()
         private = Path(requested_private or state.data.get("private_repo", str(workspace / "omarchy-setup-private"))).expanduser().resolve()
         state.data.update(private_repo=str(private), workspace_dir=str(workspace))
-        ui.say("\nOMARCHY SETUP\n\nAnswer setup/access questions → unattended installation → final sign-ins and opening checks.\nFailed installs are reported at the end; other steps continue. Completed scripts are saved.\nCtrl+C pauses setup; run ./setup.sh to resume. Logs are private; password keystrokes are not recorded.")
+        ui.say("\nOMARCHY SETUP\n\nUpdate Omarchy → complete public setup → GitHub/private setup → final sign-ins and opening checks.\nFailed installs are reported at the end; independent steps continue. Completed scripts are saved.\nCtrl+C pauses setup; run ./setup.sh to resume. Logs are private; password keystrokes are not recorded.")
         profile = args.profile or os.environ.get("OMARCHY_SETUP_PROFILE") or state.data.get("profile")
         if profile not in ("auto", "desktop", "laptop"):
             choice = ui.choose("Choose your desktop profile.", {"a": "Automatic — use connected displays", "d": "Desktop", "l": "Laptop"}, "a")
