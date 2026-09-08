@@ -3,26 +3,6 @@
   "selected": "tokyo-night/Gemini_Generated_Image_3252l33252l33252.png",
   "files": [
     {
-      "path": "catppuccin/1-catppuccin.png",
-      "sha256": "66c5d53e0f1b2ebaf5778f0dbea63eaa680fc6fab67341c1aad4cff953a19857"
-    },
-    {
-      "path": "everforest/1-everforest.jpg",
-      "sha256": "0c509d3ef2893c98ae4e7adacf3a755c339fbac09d03ab4b2dddc361f476afb7"
-    },
-    {
-      "path": "gruvbox/1-grubox.jpg",
-      "sha256": "ae200a65e0fb2219b47fd7ae539e6206c4890839355b8b265d7ce311d8480b3c"
-    },
-    {
-      "path": "kanagawa/1-kanagawa.jpg",
-      "sha256": "9b817d717688539f0db87603b661992839c3cbb5d4918a02a4efc05c9f88b27d"
-    },
-    {
-      "path": "nord/1-nord.png",
-      "sha256": "6b1c453c02254acd13e83f07bfb466690a77f842545ea55fa227c889f1bfeba9"
-    },
-    {
       "path": "tokyo-night/Gemini_Generated_Image_3252l33252l33252.png",
       "sha256": "aa28d6a9886546b7f8a97ca02e54461afe0c811b010092b602bf6a5c211d7789"
     },

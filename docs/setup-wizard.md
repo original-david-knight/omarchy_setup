@@ -46,7 +46,7 @@ Required emails and personal/work GitHub CLI identities live in the private
 repository. GitHub CLI checks validate both saved accounts individually, even
 when only one is active.
 
-Desktop configuration installs the 12 bundled custom backgrounds, retaining
+Desktop configuration installs the seven bundled custom backgrounds, retaining
 their theme folders. On first application it selects the saved starry-sky image;
 later runs preserve your wallpaper selection and any additional images. To add
 the collection to an existing installation without running the full wizard:
