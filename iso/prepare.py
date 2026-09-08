@@ -26,6 +26,8 @@ def prepare(build):
     for source in [ROOT / 'bootstrap.sh', *(ROOT / 'iso' / name for name in (
             'omarchy-personal-setup', 'post-boot.hook', 'omarchy-personal-setup.desktop'))]:
         shutil.copy2(source, payload / source.name)
+    shutil.copy2(ROOT / 'scripts/install_backgrounds.py', payload / 'install_backgrounds.py')
+    shutil.copytree(ROOT / 'backgrounds', payload / 'backgrounds')
     profile = build / 'configs/profiledef.sh'
     text = profile.read_text().replace('iso_name="omarchy"', 'iso_name="omarchy-setup"')
     text = text.replace('iso_publisher="Omarchy <https://omarchy.org>"',

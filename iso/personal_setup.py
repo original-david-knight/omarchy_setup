@@ -1,4 +1,5 @@
 """Stage only the public first-login payload in the installed system."""
+import importlib.util
 import os
 from pathlib import Path
 import shutil
@@ -19,11 +20,20 @@ def stage_personal_setup(ctx):
     if target == Path('/'):
         raise RuntimeError('Personal setup must be staged into an installation target, not the live system')
     _copy(PAYLOAD / 'bootstrap.sh', target / 'usr/local/share/omarchy-setup/bootstrap.sh')
+    shared = target / 'usr/local/share/omarchy-setup'
+    _copy(PAYLOAD / 'install_backgrounds.py', shared / 'install_backgrounds.py', 0o644)
+    shutil.copytree(PAYLOAD / 'backgrounds', shared / 'backgrounds', dirs_exist_ok=True)
+    spec = importlib.util.spec_from_file_location('install_backgrounds', shared / 'install_backgrounds.py')
+    backgrounds = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(backgrounds)
     _copy(PAYLOAD / 'omarchy-personal-setup', target / 'usr/local/bin/omarchy-personal-setup')
     _copy(PAYLOAD / 'omarchy-personal-setup.desktop',
           target / 'usr/local/share/applications/omarchy-personal-setup.desktop', 0o644)
     # Deferred-owner installs and later new users receive the same hook.
     _copy(PAYLOAD / 'post-boot.hook', target / 'etc/skel' / HOOK)
+    # Relative wallpaper links survive moving /etc/skel into a new user's home.
+    # First login records the selection after Omarchy's own finalizer finishes.
+    backgrounds.install(shared / 'backgrounds', target / 'etc/skel', record=False)
     if ctx.defer_provisioning:
         return
     entries = [line.split(':') for line in (target / 'etc/passwd').read_text().splitlines()]
@@ -44,3 +54,5 @@ def stage_personal_setup(ctx):
     _copy(PAYLOAD / 'post-boot.hook', hook)
     for path in [*missing, hook]:
         os.chown(path, uid, gid)
+    for path in backgrounds.install(shared / 'backgrounds', home, record=False):
+        os.chown(path, uid, gid, follow_symlinks=False)

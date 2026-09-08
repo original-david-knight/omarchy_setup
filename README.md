@@ -62,8 +62,10 @@ Wi-Fi, then continues automatically. Ctrl+C pauses setup. Run
 `omarchy-personal-setup` to resume an ISO installation, or explicitly run the
 existing `setup.sh` to use a cached checkout. A bootstrap `--plan` still
 clones or updates files; `./setup.sh --plan` remains the read-only preview.
-The USB needs only this public launcher. Private setup and credentials are
-fetched later through the wizard's existing GitHub authentication handoff.
+The ISO also bundles all 12 custom backgrounds and selects the saved starry-sky
+image on new installs, before network setup. Later setup runs preserve your
+wallpaper choice. Private setup and credentials are fetched later through the
+wizard's existing GitHub authentication handoff.
 
 Everything App is private. Its source checkout, build setup, and passcode live
 in `omarchy-setup-private`. This public repository supplies widgets and launch

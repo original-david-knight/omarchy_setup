@@ -268,6 +268,7 @@ fi
 validate_bar_setup
 if (( ! bar_only )); then
   python3 "$repo_dir/scripts/configure_ssh.py" --target "$target_home"
+  python3 "$repo_dir/scripts/install_backgrounds.py" --target "$target_home"
   configure_yazi
   HOME="$target_home" XDG_CONFIG_HOME="$target_home/.config" \
     xdg-mime default google-chrome.desktop x-scheme-handler/http x-scheme-handler/https text/html
