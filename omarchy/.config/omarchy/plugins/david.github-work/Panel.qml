@@ -14,9 +14,14 @@ Panel {
   property string errorText: ""
   property string fetchStderr: ""
   property bool loading: false
+  property bool refreshPending: false
+  property string busyKey: ""
+  property string reviewError: ""
+  property string reviewStderr: ""
 
   readonly property var mine: githubData && Array.isArray(githubData.mine) ? githubData.mine : []
   readonly property var review: githubData && Array.isArray(githubData.review) ? githubData.review : []
+  readonly property bool reviewing: review.some(function(pr) { return pr.review && pr.review.reviewing })
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   // Everything about pull requests waiting on the owner is gold.
   readonly property color gold: "#e3c46a"
@@ -30,7 +35,11 @@ Panel {
   implicitHeight: button.implicitHeight
 
   function refresh() {
-    if (fetchProcess.running) return
+    if (fetchProcess.running || reviewProcess.running) {
+      refreshPending = true
+      return
+    }
+    refreshPending = false
     loading = true
     errorText = ""
     fetchStderr = ""
@@ -53,6 +62,21 @@ Panel {
     openProcess.running = true
   }
 
+  function requestReview(pr) {
+    if (!pr.key || fetchProcess.running || reviewProcess.running || (pr.review && pr.review.reviewing)) return
+    busyKey = String(pr.key)
+    reviewError = ""
+    reviewStderr = ""
+    reviewProcess.command = [Quickshell.env("HOME") + "/.config/omarchy/plugins/david.github-work/review", busyKey]
+    reviewProcess.running = true
+  }
+
+  function openTicket(id) {
+    if (!id || openProcess.running) return
+    openProcess.command = [Quickshell.env("HOME") + "/.local/bin/everything-agent", "open", "/projects/items/" + encodeURIComponent(id)]
+    openProcess.running = true
+  }
+
   onOpenedChanged: if (opened) {
     refresh()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
@@ -72,13 +96,28 @@ Panel {
     onExited: function(exitCode) {
       root.loading = false
       if (exitCode !== 0) root.errorText = root.fetchStderr || "GitHub is unavailable"
+      if (root.refreshPending) root.refresh()
     }
   }
 
   Process { id: openProcess; command: [] }
 
+  Process {
+    id: reviewProcess
+    command: []
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.reviewStderr = String(text || "").trim()
+    }
+    onExited: function(exitCode) {
+      root.busyKey = ""
+      if (exitCode !== 0) root.reviewError = root.reviewStderr || "Review could not be requested"
+      root.refresh()
+    }
+  }
+
   Timer {
-    interval: 300000
+    interval: root.reviewing ? 5000 : root.opened ? 15000 : 300000
     running: true
     repeat: true
     triggeredOnStart: true
@@ -190,6 +229,17 @@ Panel {
             wrapMode: Text.WordWrap
           }
 
+          Text {
+            visible: root.reviewError !== ""
+            width: parent.width
+            text: root.reviewError
+            textFormat: Text.PlainText
+            color: Color.urgent
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+          }
+
           Column {
             id: mineSection
             width: parent.width
@@ -272,23 +322,27 @@ Panel {
             Repeater {
               model: root.review
               Item {
+                id: reviewRow
                 required property var modelData
+                readonly property bool busy: root.busyKey === modelData.key || Boolean(modelData.review && modelData.review.reviewing)
                 width: reviewSection.width
-                implicitHeight: reviewCopy.implicitHeight + Style.space(10)
+                implicitHeight: Math.max(reviewCopy.implicitHeight, reviewActions.implicitHeight) + Style.space(10)
                 Rectangle {
-                  anchors.fill: parent
+                  anchors.fill: reviewMouse
                   radius: Style.cornerRadius
                   color: reviewMouse.containsMouse ? Style.hoverFillFor(root.gold, Color.accent) : "transparent"
                 }
                 Column {
                   id: reviewCopy
                   anchors.left: parent.left
-                  anchors.right: parent.right
+                  anchors.right: reviewActions.left
+                  anchors.rightMargin: Style.space(8)
                   anchors.verticalCenter: parent.verticalCenter
                   spacing: Style.space(2)
                   Text {
                     width: parent.width
                     text: modelData.key + "  ·  " + modelData.title
+                    textFormat: Text.PlainText
                     color: root.gold
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.bodySmall
@@ -296,7 +350,8 @@ Panel {
                   }
                   Text {
                     width: parent.width
-                    text: modelData.line
+                    text: (modelData.review && modelData.review.status === "pending_approval" ? "Review ready  ·  " : "") + modelData.line
+                    textFormat: Text.PlainText
                     color: root.goldDim
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
@@ -305,10 +360,62 @@ Panel {
                 }
                 MouseArea {
                   id: reviewMouse
-                  anchors.fill: parent
+                  anchors.left: parent.left
+                  anchors.right: reviewActions.left
+                  anchors.top: parent.top
+                  anchors.bottom: parent.bottom
                   hoverEnabled: true
                   cursorShape: Qt.PointingHandCursor
                   onClicked: root.openUrl(modelData.url)
+                }
+                Column {
+                  id: reviewActions
+                  anchors.right: parent.right
+                  anchors.verticalCenter: parent.verticalCenter
+                  width: Style.space(90)
+                  spacing: Style.space(2)
+                  Text {
+                    visible: reviewRow.busy
+                    width: parent.width
+                    height: Style.space(28)
+                    text: "Reviewing"
+                    color: root.goldDim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    Accessible.role: Accessible.StaticText
+                    Accessible.name: "Reviewing " + reviewRow.modelData.key
+                  }
+                  PanelActionButton {
+                    visible: !reviewRow.busy
+                    width: parent.width
+                    size: Style.space(28)
+                    iconText: reviewRow.modelData.review ? "Re-review" : "Review"
+                    tooltipText: "Ask the agent to review this PR and prepare private draft comments"
+                    foreground: root.gold
+                    fontFamily: root.fontFamily
+                    fontSize: Style.font.caption
+                    focusable: true
+                    enabled: Boolean(reviewRow.modelData.key) && !fetchProcess.running && !reviewProcess.running
+                    Accessible.role: Accessible.Button
+                    Accessible.name: iconText + " " + reviewRow.modelData.key
+                    onClicked: root.requestReview(reviewRow.modelData)
+                  }
+                  PanelActionButton {
+                    visible: Boolean(reviewRow.modelData.review && reviewRow.modelData.review.id)
+                    width: parent.width
+                    size: Style.space(26)
+                    iconText: "Ticket"
+                    tooltipText: "Open the linked review ticket in Everything App"
+                    foreground: root.dim
+                    fontFamily: root.fontFamily
+                    fontSize: Style.font.caption
+                    focusable: true
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Review ticket for " + reviewRow.modelData.key
+                    onClicked: root.openTicket(reviewRow.modelData.review.id)
+                  }
                 }
               }
             }

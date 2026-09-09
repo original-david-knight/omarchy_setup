@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# != 1 || -z ${1//[[:space:]]/} ]]; then
+  echo "Usage: review PR_KEY" >&2
+  exit 2
+fi
+
+config="${EVERYTHING_AGENT_CONFIG_DIR:-$HOME/.config/everything-agent}/config.json"
+service_url="$(jq -er '.service_url | rtrimstr("/")' "$config")"
+token="$(jq -er .token "$config")"
+payload="$(jq -cn --arg key "$1" '{key:$key}')"
+
+# The service reuses the previous ticket and treats queued/running work as
+# an idempotent request. This helper never writes to GitHub.
+response="$(curl -sS --max-time 20 \
+  -H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+  --data-binary "$payload" --write-out $'\n%{http_code}' \
+  "$service_url/api/github/review")"
+body="${response%$'\n'*}"
+status="${response##*$'\n'}"
+if [[ $status == 200 ]]; then
+  if jq -e --arg key "$1" 'any((.review[]?, .mine[]?);
+    .key == $key and (.review.id | type == "string") and (.review.id | length > 0)
+    and (.review.status | type == "string") and (.review.status | length > 0)
+    and (.review.reviewing | type == "boolean")
+  )' <<<"$body" >/dev/null 2>&1; then
+    exit 0
+  fi
+  echo "Everything App did not confirm a review ticket" >&2
+else
+  echo "Review could not be requested (HTTP $status); open Everything App for details" >&2
+fi
+exit 1
