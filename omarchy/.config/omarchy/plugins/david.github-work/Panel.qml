@@ -117,7 +117,7 @@ Panel {
   }
 
   Timer {
-    interval: root.reviewing ? 5000 : root.opened ? 15000 : 300000
+    interval: root.reviewing ? 5000 : root.opened ? 15000 : 60000
     running: true
     repeat: true
     triggeredOnStart: true
