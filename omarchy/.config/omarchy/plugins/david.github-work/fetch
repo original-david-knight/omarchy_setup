@@ -20,5 +20,5 @@ curl -fsS --max-time 20 \
     review: [(.review // [])[] | {
       key: (.key // ""), title: (.title // ""), url: (.url // ""),
       line: (.line // ""), draft: (.draft // false)
-    }]
+    } + (if .review then {review: .review} else {} end)]
   }'

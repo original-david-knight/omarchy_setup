@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "david.github-work",
   "name": "Work pull requests",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "David Knight",
-  "description": "Open Fluxon pull requests and review requests.",
+  "description": "Work pull requests, agent reviews, and linked review tickets.",
   "kinds": ["bar-widget"],
   "activation": "on-demand",
   "entryPoints": {
