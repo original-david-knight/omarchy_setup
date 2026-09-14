@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "david.media",
+  "name": "Media",
+  "version": "1.1.0",
+  "author": "Omarchy",
+  "description": "Media keys follow the last source played and keep it selected while paused.",
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Media",
+    "description": "MPRIS now-playing with playback controls",
+    "category": "Media",
+    "allowMultiple": false
+  },
+  "omarchy": {
+    "clonedFrom": "omarchy.media"
+  }
+}

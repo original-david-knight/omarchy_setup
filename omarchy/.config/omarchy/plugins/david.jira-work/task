@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+action="${2:-create}"
+valid_args=false
+case "$action:$#" in
+  create:1|create:2) valid_args=true ;;
+  delete:3) [[ -n ${3//[[:space:]]/} ]] && valid_args=true ;;
+esac
+if [[ $valid_args != true || -z ${1:-} || -z ${1//[[:space:]]/} ]]; then
+  echo "Usage: task ISSUE_KEY [create | delete TASK_ID]" >&2
+  exit 2
+fi
+
+config="${EVERYTHING_AGENT_CONFIG_DIR:-$HOME/.config/everything-agent}/config.json"
+service_url="$(jq -er '.service_url | rtrimstr("/")' "$config")"
+token="$(jq -er .token "$config")"
+
+if [[ $action == delete ]]; then
+  task_id="$3"
+  encoded_id="$(jq -rn --arg id "$task_id" '$id | @uri')"
+  task_url="$service_url/api/tasks/$encoded_id"
+  # Jira's compact task link has no revision. Read the linked row before
+  # deleting it, then let the service reject any concurrent change.
+  response="$(curl -sS --max-time 20 -H "Authorization: Bearer $token" \
+    --write-out $'\n%{http_code}' "$task_url")"
+  body="${response%$'\n'*}"
+  status="${response##*$'\n'}"
+  [[ $status == 404 ]] && exit 0
+  if [[ $status != 200 ]]; then
+    echo "Linked task could not be read (HTTP $status)" >&2
+    exit 1
+  fi
+  if ! revision="$(jq -er --arg id "$task_id" '
+    select(.id == $id and .can_complete == true) | .revision |
+    select(type == "number" and . >= 1 and . == floor)
+  ' <<<"$body" 2>/dev/null)"; then
+    echo "Everything App did not confirm a deletable linked task" >&2
+    exit 1
+  fi
+  response="$(curl -sS --max-time 20 -X DELETE \
+    -H "Authorization: Bearer $token" -H "X-Base-Revision: $revision" \
+    --write-out $'\n%{http_code}' "$task_url")"
+  status="${response##*$'\n'}"
+  case "$status" in
+    204|404) exit 0 ;;
+    409) echo "Task changed; refresh and try again (HTTP 409)" >&2 ;;
+    *) echo "Linked task could not be deleted (HTTP $status)" >&2 ;;
+  esac
+  exit 1
+fi
+
+payload="$(jq -cn --arg key "$1" '{key:$key}')"
+
+# The service creates, restores, or reopens the one linked task. Repeating
+# this request leaves an already-open task open instead of creating a copy.
+response="$(
+  curl -sS --max-time 20 \
+    -H "Authorization: Bearer $token" \
+    -H "Content-Type: application/json" \
+    --data-binary "$payload" \
+    --write-out $'\n%{http_code}' \
+    "$service_url/api/jira/task"
+)"
+body="${response%$'\n'*}"
+status="${response##*$'\n'}"
+
+if [[ $status == 2* ]]; then
+  if jq -e --arg key "$1" 'any(.issues[]?;
+    .key == $key and (.task.id | type == "string") and (.task.id | length > 0) and .task.done == false
+  )' <<<"$body" >/dev/null 2>&1; then
+    exit 0
+  fi
+  echo "Everything App did not confirm an open task for this Jira ticket" >&2
+else
+  echo "Task could not be opened for this Jira ticket (HTTP $status)" >&2
+fi
+exit 1

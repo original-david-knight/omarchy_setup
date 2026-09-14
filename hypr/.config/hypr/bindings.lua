@@ -84,6 +84,11 @@ o.bind("SUPER + BACKSLASH", "Play/pause", home .. "/bin/media-play-pause", { loc
 o.bind("CTRL + SHIFT + J", "Volume down", "omarchy-audio-output-volume -3", { locked = true })
 o.bind("CTRL + SHIFT + K", "Volume up", "omarchy-audio-output-volume +3", { locked = true })
 
+-- Drop Omarchy's per-workspace window-width bookmarks. The feature was never
+-- used and Super + Home kept firing a "No saved width" notification in games.
+hl.unbind("SUPER + Home") -- Was: Omarchy restore window width.
+hl.unbind("SUPER + ALT + Home") -- Was: Omarchy save window width.
+
 -- Keep the old full-screen key, replacing Quattro's file-manager binding.
 hl.unbind("SUPER + SHIFT + F") -- Was: Quattro file manager.
 o.bind(

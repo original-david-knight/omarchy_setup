@@ -58,20 +58,41 @@ spacer and anchors the clock at the center. Shell-wide font size and horizontal
 bar height are configured in `omarchy/.config/omarchy/shell.toml`; the 18 px base
 font scales the stock 26 px bar to 39 px.
 
+The desktop profile selects `david.bar` as its bar option (`bar.id`). That
+plugin runs the untouched stock bar and rebinds the module lists of screens
+matched by `bar.screenLayouts`, so the portrait side monitors show only
+workspaces and the clock while the center monitor keeps `bar.layout`. Edit
+`screenLayouts` by hand; the `omarchy bar` commands and widget drags only touch
+`bar.layout`. See `docs/bar-screen-layouts.md`.
+
 The Everything-backed entry in both layouts is `david.tasks`, a focused task
-list plugin tracked in this repo. It reads and creates rows through `/api/tasks`
-with the desktop bearer from `~/.config/everything-agent/config.json`; the
+list plugin tracked in this repo. Click a row to open that task on the web, or
+use its × button to mark it finished. It reads and creates rows through
+`/api/tasks` and completes them with `PATCH /api/tasks/{id}`, using the desktop
+bearer from `~/.config/everything-agent/config.json`; the
 broader `david.everything` summary plugin installed by everything-app is
 intentionally not in the bar.
+Tasks, Jira, and both PR queues offer **Assign** to choose a project and agent;
+the existing project is the default. The shared form and authenticated
+`delegate` helper live in `david.tasks`, so deploy the widgets together through
+`stow_all.sh --bar-only`. See `docs/everything-widgets.md` for behavior and tests.
 The always-expanded `david.tray` clone is tracked alongside the task, Jira,
 GitHub, and podcast widgets, so every custom ID in either layout has a matching
 plugin in the public stow package. `stow_all.sh` validates that invariant.
 
 `david.podcasts` is the unified **Listening** widget: Spotify through MPRIS,
 the existing Everything podcast player, and three independently controlled
-myNoise soundscapes. Its stable ID preserves both profile layouts and the
-media-key fallback. `install_listening.sh` installs its dependencies. See
+myNoise soundscapes. Its stable ID preserves both profile layouts. The
+`david.media` service routes media keys to the last source played, including
+podcasts through mpv-mpris. `install_listening.sh` installs its dependencies. See
 `docs/listening-widget.md` for controls, configuration, and diagnostics.
+
+`david.headset` controls the SteelSeries Arctis Nova Pro Omni through its base
+station's vendor HID interface: ANC mode and strength, transparency, the DAC's
+own volume, microphone mute (PipeWire) and sidetone, its ten EQ bands, and
+battery.
+Its `headset` helper is dependency-free Python; `install_headset.sh` installs
+the udev rule that grants the seated user access. See `docs/headset-widget.md`.
 
 `herdr` and `bin` must remain non-folded because those directories also hold
 runtime state or files owned outside this repository. The deployment script

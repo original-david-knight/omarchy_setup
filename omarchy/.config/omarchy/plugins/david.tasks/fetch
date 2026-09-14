@@ -18,7 +18,15 @@ curl -fsS --max-time 20 \
           id: (.id // ""),
           title: (.title // ""),
           source: (.source // ""),
-          done: (.done // false)
+          done: (.done // false),
+          view: (.view // (if .done then "completed" else "action" end)),
+          can_complete: (.can_complete == true),
+          next_action: (.next_action // ""),
+          project_name: (.project_name // .project_key // ""),
+          item_key: (.item_key // .id // ""),
+          status: (.status // ""),
+          assignee: (.assignee // ""),
+          revision: (.revision // 0)
         }]
       }
   '

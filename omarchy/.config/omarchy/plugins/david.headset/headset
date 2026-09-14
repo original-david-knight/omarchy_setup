@@ -1,0 +1,567 @@
+#!/usr/bin/env python3
+"""Drive a SteelSeries Arctis Nova Pro Omni from its base station's vendor HID interface.
+
+The DAC enumerates as USB 1038:2290 and exposes a 64-byte vendor report on HID
+interface 3. Commands are `01 <opcode> <args>`; replies come back as `01 <opcode>`
+frames and the DAC pushes `07 <opcode>` events when a knob or button changes
+state. The opcode map was validated by the Arctis Sound Manager community on
+this exact product (src/arctis_sound_manager/devices/nova_pro_omni.yaml). The
+station volume write (0x25) is the sibling Nova Elite base station's, which the
+Omni's own device spec extends.
+
+Commands:
+  status                one JSON status object
+  watch                 JSON status lines: at start, on every change, and on hot-plug
+  set KEY VALUE         write a setting, then print the refreshed status
+                        (keys: anc, anc-level, transparency, volume, limiter, mic-volume,
+                        mic-led, auto-off, sidetone, eq-band BAND:VALUE, eq-flat)
+  volume up|down [N]    nudge the DAC volume by N percent (default 4)
+"""
+from __future__ import annotations
+
+from contextlib import contextmanager
+import fcntl
+import json
+import os
+import re
+import select
+import struct
+import sys
+import time
+from pathlib import Path
+
+VENDOR_ID = 0x1038
+PRODUCT_ID = 0x2290
+HID_ID = f"0003:{VENDOR_ID:08X}:{PRODUCT_ID:08X}"
+VENDOR_PAGE_PREFIX = bytes.fromhex("06c0ff")
+FRAME = 64
+REPORT_ID = 0x01
+VOLUME_STEPS = 56  # raw 0 is loudest, raw 56 is silent
+STATUS_TIMEOUT = 1.0
+REFRESH_INTERVAL = 30.0
+
+ANC_MODES = {"off": 0x00, "transparent": 0x01, "on": 0x02}
+ANC_LEVELS = {"low": 0x01, "medium": 0x02, "high": 0x03}
+CHARGING = {0x01: "unknown", 0x02: "charging", 0x04: "plugged", 0x08: "discharging"}
+LINKS = {0x01: "not_paired", 0x02: "searching", 0x04: "paired_offline", 0x08: "connected"}
+AUTO_OFF = {0: 0, 1: 1, 2: 5, 3: 10, 4: 15, 5: 30, 6: 60}
+EQ_BANDS = 10
+EQ_ZERO = 20  # band values run 0..40 in 0.5 dB steps; 20 is 0 dB
+EQ_FREQUENCIES = (32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000)
+EQ_FEATURE_SIZE = 1036  # report 1: 1035 data bytes + the report ID
+EQ_CUSTOM_SLOT = 4
+
+SETTINGS = {
+    # key: (opcode, parser, description)
+    "anc": (0xBD, lambda v: ANC_MODES[v], "off | transparent | on"),
+    "anc-level": (0xB8, lambda v: ANC_LEVELS[v] if v in ANC_LEVELS else bounded(v, 1, 3), "low | medium | high"),
+    "transparency": (0xB9, lambda v: bounded(v, 1, 10), "1-10"),
+    "volume": (0x25, lambda v: volume_raw(v), "0-100 percent"),
+    "limiter": (0x27, lambda v: on_off(v), "on | off"),
+    "mic-volume": (0x37, lambda v: bounded(v, 1, 10), "1-10"),
+    "mic-led": (0xBF, lambda v: bounded(v, 1, 10), "1-10"),
+    "auto-off": (0xC1, lambda v: bounded(v, 0, 6), "0-6"),
+}
+
+
+class HeadsetError(Exception):
+    pass
+
+
+def bounded(value, low, high):
+    number = int(value)
+    if number < low or number > high:
+        raise HeadsetError(f"value must be between {low} and {high}")
+    return number
+
+
+def on_off(value):
+    if value in ("on", "1", "true"):
+        return 0x01
+    if value in ("off", "0", "false"):
+        return 0x00
+    raise HeadsetError("value must be on or off")
+
+
+def volume_percent(raw):
+    if raw is None:
+        return None
+    return round((VOLUME_STEPS - max(0, min(VOLUME_STEPS, int(raw)))) * 100 / VOLUME_STEPS)
+
+
+def volume_raw(percent):
+    number = bounded(percent, 0, 100)
+    return VOLUME_STEPS - round(number * VOLUME_STEPS / 100)
+
+
+def frame(*payload):
+    body = bytearray(FRAME)
+    body[: len(payload)] = bytes(payload)
+    return bytes(body)
+
+
+def eq_curve(key, value, current=None):
+    """Build a complete curve; bands we have never observed start at 0 dB."""
+    bands = list(current) if current is not None else [None] * EQ_BANDS
+    if len(bands) != EQ_BANDS:
+        raise HeadsetError("expected ten EQ bands")
+    if key == "eq-flat":
+        return [EQ_ZERO] * EQ_BANDS
+    band, _, level = str(value).partition(":")
+    try:
+        bands[bounded(band, 1, EQ_BANDS) - 1] = bounded(level, 0, 40)
+        return [EQ_ZERO if v is None else bounded(v, 0, 40) for v in bands]
+    except (TypeError, ValueError):
+        raise HeadsetError("eq-band expects BAND:VALUE with band 1-10 and value 0-40") from None
+
+
+def encode_eq(bands):
+    """Omni radio EQ: a complete Custom model in feature report 1, opcode 0x1b.
+
+    Protocol reference: Cisien/arctis-things, arctis-nova-elite-eq.py.
+    The 0x31 push notification is NOT the command that installs a curve.
+    Header: report, opcode, slot, 6-byte alias, 61-byte name. Each filter is
+    frequency (LE16), peak type (1), signed gain (tenths dB), Q (LE16 / 1000).
+    """
+    if len(bands) != EQ_BANDS:
+        raise HeadsetError("expected ten EQ bands")
+    payload = bytes((REPORT_ID, 0x1B, EQ_CUSTOM_SLOT))
+    payload += b"Custom" + b"Custom".ljust(61, b"\0")
+    for frequency, value in zip(EQ_FREQUENCIES, bands):
+        payload += struct.pack("<HBbH", frequency, 1, (bounded(value, 0, 40) - EQ_ZERO) * 5, 1410)
+    return payload.ljust(EQ_FEATURE_SIZE, b"\0")
+
+
+def encode(key, value, eq_bands=None):
+    """Return reports for one setting. EQ uses Feature; other settings use Output."""
+    if key == "sidetone":
+        level = bounded(value, 0, 10)
+        return [frame(REPORT_ID, 0x38, 1 if level else 0, max(1, level))]
+    if key in ("eq-band", "eq-flat"):
+        return [encode_eq(eq_curve(key, value, eq_bands))]
+    if key not in SETTINGS:
+        raise HeadsetError(f"unknown setting {key!r}; expected one of "
+                           + ", ".join(sorted(SETTINGS) + ["sidetone", "eq-band", "eq-flat"]))
+    opcode, parse, expected = SETTINGS[key]
+    try:
+        raw = parse(str(value))
+    except (KeyError, ValueError):
+        raise HeadsetError(f"{key} expects {expected}") from None
+    return [frame(REPORT_ID, opcode, raw)]
+
+
+def parse_status(data):
+    """Decode a `01 b0` status reply into the widget's vocabulary."""
+    if len(data) < 0x11 or data[0] != 0x01 or data[1] != 0xB0:
+        return None
+    return {
+        "bluetooth_on_power_up": bool(data[0x02]),
+        "battery": int(data[0x06]),
+        "spare_battery": int(data[0x07]),
+        "transparency": int(data[0x08]),
+        "mic_muted": bool(data[0x09]),
+        "anc": {0: "off", 1: "transparent", 2: "on"}.get(data[0x0A], "off"),
+        "mic_led": int(data[0x0B]),
+        "auto_off_minutes": AUTO_OFF.get(data[0x0C], None),
+        "wireless_mode": "range" if data[0x0D] == 1 else "speed",
+        "link": LINKS.get(data[0x0E], "unknown"),
+        "online": data[0x0E] == 0x08,
+        "charging": CHARGING.get(data[0x0F], "unknown"),
+        "anc_level": int(data[0x10]) if 1 <= data[0x10] <= 3 else 3,
+    }
+
+
+def parse_event(data, state):
+    """Apply one `07 <opcode>` push event to `state`; return the changed keys."""
+    if len(data) < 3 or data[0] != 0x07:
+        return {}
+    opcode = data[1]
+    changed = {}
+    if opcode == 0x25:
+        changed["volume_raw"] = int(data[2])
+        changed["volume"] = volume_percent(data[2])
+    elif opcode == 0x31 and len(data) >= 4 and 1 <= data[2] <= EQ_BANDS and data[3] <= 40:
+        bands = list(state.get("eq_bands") or [None] * EQ_BANDS)
+        bands[data[2] - 1] = int(data[3])
+        changed["eq_bands"] = bands
+    elif opcode == 0x37:
+        changed["mic_volume"] = int(data[2])
+    elif opcode == 0x45:
+        changed["media_mix"] = int(data[2])
+        changed["chat_mix"] = int(data[3])
+    elif opcode == 0xB5:
+        changed["link"] = LINKS.get(data[4], "unknown")
+        changed["online"] = data[4] == 0x08
+    elif opcode == 0xB7:
+        changed["battery"] = int(data[2])
+        changed["spare_battery"] = int(data[3])
+        changed["charging"] = CHARGING.get(data[4], "unknown")
+    elif opcode == 0xB8:
+        changed["anc_level"] = int(data[2])
+    elif opcode == 0xB9:
+        changed["transparency"] = int(data[2])
+    elif opcode == 0xBB:
+        changed["mic_muted"] = bool(data[2])
+    elif opcode == 0xBD:
+        changed["anc"] = {0: "off", 1: "transparent", 2: "on"}.get(data[2], "off")
+    state.update(changed)
+    return changed
+
+
+def sysfs_root():
+    return Path(os.environ.get("DAVID_HEADSET_SYSFS", "/sys/class/hidraw"))
+
+
+def find_device():
+    """Return the /dev/hidraw node carrying the Omni's vendor report, or None."""
+    root = sysfs_root()
+    if not root.is_dir():
+        return None
+    for entry in sorted(root.iterdir()):
+        try:
+            uevent = (entry / "device" / "uevent").read_text()
+            descriptor = (entry / "device" / "report_descriptor").read_bytes()
+        except OSError:
+            continue
+        if f"HID_ID={HID_ID}" not in uevent.upper():
+            continue
+        if not descriptor.startswith(VENDOR_PAGE_PREFIX):
+            continue
+        return str(Path(os.environ.get("DAVID_HEADSET_DEV", "/dev")) / entry.name)
+    return None
+
+
+def state_file():
+    base = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "david-headset"
+    base.mkdir(parents=True, exist_ok=True)
+    return base / "state.json"
+
+
+def load_saved():
+    try:
+        saved = json.loads(state_file().read_text())
+        return saved if isinstance(saved, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+SHARED_KEYS = ("volume_raw", "eq_bands", "mic_volume", "sidetone", "limiter")
+
+
+@contextmanager
+def state_lock():
+    # Every monitor owns a helper. Serialize read/modify/write so a full EQ
+    # report includes band edits made by the other monitor or the CLI.
+    with state_file().with_suffix(".lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def save_locked(state, keys=SHARED_KEYS):
+    keep = load_saved()
+    keep.update({key: state[key] for key in keys if key in SHARED_KEYS and key in state})
+    try:
+        path = state_file()
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(keep))
+        tmp.replace(path)
+    except OSError:
+        pass
+
+
+def save(state, keys=SHARED_KEYS):
+    with state_lock():
+        save_locked(state, keys)
+
+
+def state_mtime():
+    try:
+        return state_file().stat().st_mtime_ns
+    except OSError:
+        return None
+
+
+def sync_saved(state, seen_mtime):
+    """Fold in settings another helper instance saved (one bar per monitor); return the mtime seen."""
+    current = state_mtime()
+    if current == seen_mtime:
+        return seen_mtime
+    saved = load_saved()
+    for key in SHARED_KEYS:
+        if saved.get(key) is not None:
+            state[key] = saved[key]
+    return current
+
+
+class Device:
+    def __init__(self, path):
+        self.path = path
+        self.fd = os.open(path, os.O_RDWR | os.O_NONBLOCK)
+
+    def close(self):
+        os.close(self.fd)
+
+    def write(self, data):
+        if os.write(self.fd, data) != len(data):
+            raise HeadsetError("short write to the headset")
+
+    def write_feature(self, data):
+        # HIDIOCSFEATURE(len), from linux/hidraw.h. A mutable buffer makes
+        # ioctl return the transfer length, and supports reports > 1024 bytes.
+        request = (3 << 30) | (len(data) << 16) | (ord("H") << 8) | 0x06
+        try:
+            written = fcntl.ioctl(self.fd, request, bytearray(data), True)
+        except OSError as error:
+            raise HeadsetError(f"could not apply the headset EQ: {error.strerror or error}") from error
+        if written != len(data):
+            raise HeadsetError(f"short EQ feature write: {written} of {len(data)} bytes")
+
+    def read(self, timeout):
+        ready, _, _ = select.select([self.fd], [], [], max(0, timeout))
+        if not ready:
+            return None
+        try:
+            return os.read(self.fd, FRAME)
+        except BlockingIOError:
+            return None
+
+    def drain(self, state, seconds=0.05):
+        end = time.monotonic() + seconds
+        changed = {}
+        while True:
+            data = self.read(end - time.monotonic())
+            if data is None:
+                return changed
+            changed.update(parse_event(data, state))
+
+    def query_status(self, state):
+        """Ask for the wireless settings block; apply it and any events seen meanwhile."""
+        self.write(frame(REPORT_ID, 0xB0))
+        end = time.monotonic() + STATUS_TIMEOUT
+        while True:
+            data = self.read(end - time.monotonic())
+            if data is None:
+                raise HeadsetError("the headset did not answer the status query")
+            decoded = parse_status(data)
+            if decoded:
+                state.update(decoded)
+                return decoded
+            parse_event(data, state)
+
+
+def open_device():
+    path = find_device()
+    if not path:
+        raise HeadsetError("Arctis Nova Pro Omni is not connected (set the DAC switch to USB-1)")
+    try:
+        return Device(path)
+    except PermissionError:
+        raise HeadsetError(f"no permission for {path}; run ./install_headset.sh to install the udev rule") from None
+
+
+def fresh_state():
+    return {"connected": False, "volume_raw": None, "volume": None, "eq_bands": None, **load_saved()}
+
+
+def public(state):
+    view = dict(state)
+    view["volume"] = volume_percent(view.get("volume_raw"))
+    return view
+
+
+def emit(state):
+    sys.stdout.write(json.dumps(public(state)) + "\n")
+    sys.stdout.flush()
+
+
+def snapshot(device, state):
+    device.query_status(state)
+    state["connected"] = True
+    state["device"] = device.path
+    return state
+
+
+def cmd_status():
+    state = fresh_state()
+    try:
+        device = open_device()
+    except HeadsetError as error:
+        state["error"] = str(error)
+        emit(state)
+        return 0
+    try:
+        snapshot(device, state)
+    finally:
+        device.close()
+    emit(state)
+    return 0
+
+
+REPORTED_BY_STATUS = {"anc", "anc-level", "transparency", "mic-led", "auto-off"}
+
+
+def apply(device, state, key, value):
+    with state_lock():
+        sync_saved(state, None)
+        apply_locked(device, state, key, value)
+
+
+def apply_locked(device, state, key, value):
+    """Write one setting; the DAC never echoes host writes, so refresh or remember it."""
+    is_eq = key in ("eq-band", "eq-flat")
+    bands = eq_curve(key, value, state.get("eq_bands")) if is_eq else None
+    frames = [encode_eq(bands)] if is_eq else encode(key, value)
+    for data in frames:
+        if is_eq:
+            device.write_feature(data)
+        else:
+            device.write(data)
+        time.sleep(0.03)
+    if key == "volume":
+        state["volume_raw"] = volume_raw(value)
+    elif key == "sidetone":
+        state["sidetone"] = bounded(value, 0, 10)
+    elif key == "mic-volume":
+        state["mic_volume"] = bounded(value, 1, 10)
+    elif key == "limiter":
+        state["limiter"] = on_off(value) == 1
+    elif is_eq:
+        state["eq_bands"] = bands
+    device.drain(state, 0.05)
+    if key in REPORTED_BY_STATUS:
+        snapshot(device, state)
+    state.pop("error", None)
+    save_locked(state)
+
+
+def cmd_set(key, value):
+    state = fresh_state()
+    device = open_device()
+    try:
+        apply(device, state, key, value)
+    finally:
+        device.close()
+    emit(state)
+    return 0
+
+
+def nudged_volume(state, direction, step):
+    current = state.get("volume_raw")
+    if current is None:
+        raise HeadsetError("the DAC volume is unknown until its knob is turned or the slider is set")
+    percent = volume_percent(current) + (step if direction == "up" else -step)
+    return str(max(0, min(100, percent)))
+
+
+def cmd_volume(direction, step):
+    return cmd_set("volume", nudged_volume(fresh_state(), direction, step))
+
+
+def handle_line(device, state, line):
+    """One stdin command for the watch loop: `set KEY VALUE`, `volume up|down [N]`, `refresh`."""
+    words = line.split()
+    if not words:
+        return
+    if words[0] == "refresh":
+        snapshot(device, state)
+    elif words[0] == "set" and len(words) == 3:
+        apply(device, state, words[1], words[2])
+    elif words[0] == "set" and len(words) == 4 and words[1] == "eq-band":
+        apply(device, state, "eq-band", f"{words[2]}:{words[3]}")
+    elif words[0] == "volume" and len(words) in (2, 3) and words[1] in ("up", "down"):
+        step = bounded(words[2], 1, 100) if len(words) == 3 else 4
+        apply(device, state, "volume", nudged_volume(state, words[1], step))
+    else:
+        raise HeadsetError(f"unknown command {line.strip()!r}")
+
+
+def cmd_watch():
+    """Own the device: stream state changes to stdout and take commands on stdin."""
+    state = fresh_state()
+    device = None
+    last = None
+    next_refresh = 0.0
+    stdin = sys.stdin.buffer
+    os.set_blocking(stdin.fileno(), False)
+    pending = b""
+    seen_mtime = state_mtime()
+    while True:
+        if device is None:
+            try:
+                device = open_device()
+                snapshot(device, state)
+                state.pop("error", None)
+                next_refresh = time.monotonic() + REFRESH_INTERVAL
+            except (HeadsetError, OSError) as error:
+                if device is not None:
+                    device.close()
+                    device = None
+                state.update({"connected": False, "error": str(error)})
+                if public(state) != last:
+                    last = public(state)
+                    emit(state)
+                ready, _, _ = select.select([stdin], [], [], 2.0)
+                if ready and not stdin.read():
+                    return 0  # the shell closed our stdin
+                continue
+        try:
+            ready, _, _ = select.select([device.fd, stdin], [], [], 1.0)
+            if stdin in ready:
+                chunk = stdin.read()
+                if not chunk:
+                    return 0
+                pending += chunk
+                while b"\n" in pending:
+                    line, pending = pending.split(b"\n", 1)
+                    try:
+                        handle_line(device, state, line.decode(errors="replace"))
+                    except HeadsetError as error:
+                        state["error"] = str(error)
+            if device.fd in ready:
+                data = device.read(0)
+                if data is not None:
+                    changed = parse_event(data, state)
+                    if changed:
+                        save(state, changed)
+                    else:
+                        decoded = parse_status(data)
+                        if decoded:
+                            state.update(decoded)
+            if time.monotonic() >= next_refresh:
+                device.write(frame(REPORT_ID, 0xB0))
+                next_refresh = time.monotonic() + REFRESH_INTERVAL
+        except OSError as error:
+            device.close()
+            device = None
+            state.update({"connected": False, "error": f"headset unplugged ({error.strerror or error})"})
+        seen_mtime = sync_saved(state, seen_mtime)
+        if public(state) != last:
+            last = public(state)
+            emit(state)
+
+
+def main(argv):
+    if len(argv) < 2 or argv[1] in ("-h", "--help"):
+        sys.stderr.write(__doc__.strip() + "\n")
+        return 2
+    command = argv[1]
+    try:
+        if command == "status":
+            return cmd_status()
+        if command == "watch":
+            return cmd_watch()
+        if command == "set" and len(argv) == 4:
+            return cmd_set(argv[2], argv[3])
+        if command == "volume" and len(argv) in (3, 4) and argv[2] in ("up", "down"):
+            return cmd_volume(argv[2], bounded(argv[3], 1, 100) if len(argv) == 4 else 4)
+    except HeadsetError as error:
+        sys.stderr.write(f"{error}\n")
+        return 1
+    except KeyboardInterrupt:
+        return 130
+    sys.stderr.write(__doc__.strip() + "\n")
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

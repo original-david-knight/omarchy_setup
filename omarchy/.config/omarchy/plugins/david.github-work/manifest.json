@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "david.github-work",
   "name": "Work pull requests",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "author": "David Knight",
-  "description": "Work pull requests, agent reviews, and linked review tickets.",
+  "description": "Work pull requests, assignment to a chosen agent, and review tickets.",
   "kinds": ["bar-widget"],
   "activation": "on-demand",
   "entryPoints": {

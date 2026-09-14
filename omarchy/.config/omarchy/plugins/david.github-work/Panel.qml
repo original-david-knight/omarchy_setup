@@ -4,6 +4,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
+import "../david.tasks" as Tasks
 
 Panel {
   id: root
@@ -11,6 +12,7 @@ Panel {
   ipcTarget: "david.github-work"
 
   property var githubData: ({ mine: [], review: [] })
+  property string assignmentMessage: ""
   property string errorText: ""
   property string fetchStderr: ""
   property bool loading: false
@@ -21,7 +23,7 @@ Panel {
 
   readonly property var mine: githubData && Array.isArray(githubData.mine) ? githubData.mine : []
   readonly property var review: githubData && Array.isArray(githubData.review) ? githubData.review : []
-  readonly property bool reviewing: review.some(function(pr) { return pr.review && pr.review.reviewing })
+  readonly property bool reviewing: mine.concat(review).some(function(pr) { return pr.review && pr.review.reviewing })
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   // Everything about pull requests waiting on the owner is gold.
   readonly property color gold: "#e3c46a"
@@ -35,7 +37,7 @@ Panel {
   implicitHeight: button.implicitHeight
 
   function refresh() {
-    if (fetchProcess.running || reviewProcess.running) {
+    if (fetchProcess.running || reviewProcess.running || assignment.busy) {
       refreshPending = true
       return
     }
@@ -63,7 +65,7 @@ Panel {
   }
 
   function requestReview(pr) {
-    if (!pr.key || fetchProcess.running || reviewProcess.running || (pr.review && pr.review.reviewing)) return
+    if (!pr.key || fetchProcess.running || reviewProcess.running || assignment.active || (pr.review && pr.review.reviewing)) return
     busyKey = String(pr.key)
     reviewError = ""
     reviewStderr = ""
@@ -79,7 +81,7 @@ Panel {
 
   onOpenedChanged: if (opened) {
     refresh()
-    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+    Qt.callLater(function() { (assignment.active ? assignment : keyCatcher).forceActiveFocus() })
   }
 
   Process {
@@ -153,12 +155,13 @@ Panel {
     owner: root
     bar: root.bar
     open: root.opened
-    focusTarget: keyCatcher
+    focusTarget: assignment.active ? assignment : keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(500))
-    contentHeight: panel.fittedContentHeight(contentColumn.implicitHeight, Style.space(680))
+    contentHeight: panel.fittedContentHeight(assignment.active ? assignment.implicitHeight : contentColumn.implicitHeight, Style.space(680))
 
     PanelKeyCatcher {
       id: keyCatcher
+      blocked: assignment.active
       anchors.fill: parent
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
@@ -173,8 +176,27 @@ Panel {
         else if (text === "o" || text === "O") root.openUrl("github")
       }
 
+      Tasks.AssignAgent {
+        id: assignment
+        width: parent.width
+        height: parent.height
+        foreground: root.foreground
+        fontFamily: root.fontFamily
+        onActiveChanged: if (active) {
+          root.assignmentMessage = ""
+          scroll.contentY = 0
+        }
+        onAssigned: function(assignee) {
+          root.assignmentMessage = "Assigned to " + assignee + "."
+          root.refresh()
+          Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+        }
+        onCancelled: Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+      }
+
       Flickable {
         id: scroll
+        visible: !assignment.active
         anchors.fill: parent
         contentWidth: width
         contentHeight: contentColumn.implicitHeight
@@ -188,6 +210,17 @@ Panel {
           id: contentColumn
           width: scroll.width
           spacing: Style.space(12)
+
+          Text {
+            visible: root.assignmentMessage !== ""
+            width: parent.width
+            text: root.assignmentMessage
+            textFormat: Text.PlainText
+            color: Color.accent
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+          }
 
           Row {
             width: parent.width
@@ -260,9 +293,10 @@ Panel {
             Repeater {
               model: root.mine
               Item {
+                id: mineRow
                 required property var modelData
                 width: mineSection.width
-                implicitHeight: rowCopy.implicitHeight + Style.space(10)
+                implicitHeight: Math.max(rowCopy.implicitHeight, mineAssignment.implicitHeight) + Style.space(10)
                 Rectangle {
                   anchors.fill: parent
                   radius: Style.cornerRadius
@@ -271,7 +305,8 @@ Panel {
                 Column {
                   id: rowCopy
                   anchors.left: parent.left
-                  anchors.right: parent.right
+                  anchors.right: mineAssignment.left
+                  anchors.rightMargin: Style.space(8)
                   anchors.verticalCenter: parent.verticalCenter
                   spacing: Style.space(2)
                   Text {
@@ -293,10 +328,30 @@ Panel {
                 }
                 MouseArea {
                   id: rowMouse
-                  anchors.fill: parent
+                  anchors.left: parent.left
+                  anchors.right: mineAssignment.left
+                  anchors.top: parent.top
+                  anchors.bottom: parent.bottom
                   hoverEnabled: true
                   cursorShape: Qt.PointingHandCursor
                   onClicked: root.openUrl(modelData.url)
+                }
+                PanelActionButton {
+                  id: mineAssignment
+                  anchors.right: parent.right
+                  anchors.verticalCenter: parent.verticalCenter
+                  width: Style.space(90)
+                  size: Style.space(28)
+                  iconText: "Assign"
+                  tooltipText: "Assign to agent"
+                  foreground: Color.accent
+                  fontFamily: root.fontFamily
+                  fontSize: Style.font.caption
+                  focusable: true
+                  enabled: Boolean(mineRow.modelData.key) && !fetchProcess.running && !reviewProcess.running && !(mineRow.modelData.review && mineRow.modelData.review.status === "in_progress") && !assignment.active
+                  Accessible.role: Accessible.Button
+                  Accessible.name: "Assign " + mineRow.modelData.title + " to an agent"
+                  onClicked: assignment.start("github", mineRow.modelData.key, mineRow.modelData.title)
                 }
               }
             }
@@ -374,6 +429,20 @@ Panel {
                   anchors.verticalCenter: parent.verticalCenter
                   width: Style.space(90)
                   spacing: Style.space(2)
+                  PanelActionButton {
+                    width: Style.space(90)
+                    size: Style.space(28)
+                    iconText: "Assign"
+                    tooltipText: "Assign to agent"
+                    foreground: Color.accent
+                    fontFamily: root.fontFamily
+                    fontSize: Style.font.caption
+                    focusable: true
+                    enabled: Boolean(reviewRow.modelData.key) && !fetchProcess.running && !reviewProcess.running && !(reviewRow.modelData.review && reviewRow.modelData.review.status === "in_progress") && !assignment.active
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Assign " + reviewRow.modelData.title + " to an agent"
+                    onClicked: assignment.start("github", reviewRow.modelData.key, reviewRow.modelData.title)
+                  }
                   Text {
                     visible: reviewRow.busy
                     width: parent.width
@@ -397,7 +466,7 @@ Panel {
                     fontFamily: root.fontFamily
                     fontSize: Style.font.caption
                     focusable: true
-                    enabled: Boolean(reviewRow.modelData.key) && !fetchProcess.running && !reviewProcess.running
+                    enabled: Boolean(reviewRow.modelData.key) && !fetchProcess.running && !reviewProcess.running && !assignment.active
                     Accessible.role: Accessible.Button
                     Accessible.name: iconText + " " + reviewRow.modelData.key
                     onClicked: root.requestReview(reviewRow.modelData)

@@ -157,10 +157,16 @@ validate_bar_setup() {
     return 1
   }
 
+  # Every custom widget in the main layout, in each per-screen layout, in the
+  # service list, and the selected bar option itself must ship in this repo.
   mapfile -t plugin_ids < <(jq -r '
-    ((.bar.layout.left // []) + (.bar.layout.center // []) + (.bar.layout.right // []))[]
-    | select((.type // "") == "")
-    | (.id // "")
+    [
+      (((.bar.layout.left // []) + (.bar.layout.center // []) + (.bar.layout.right // []) + (.plugins // [])
+        + ([.bar.screenLayouts[]?.layout | (.left // []) + (.center // []) + (.right // [])] | add // []))[]
+        | select((.type // "") == "")
+        | (.id // "")),
+      (.bar.id // "")
+    ][]
     | select(startswith("david."))
   ' "$shell_config" | sort -u)
 
@@ -168,11 +174,11 @@ validate_bar_setup() {
     plugin_dir="$target_home/.config/omarchy/plugins/$plugin_id"
     source_plugin_dir="$repo_dir/omarchy/.config/omarchy/plugins/$plugin_id"
     [[ -r $plugin_dir/manifest.json ]] || {
-      echo "Bar widget $plugin_id has no deployed plugin manifest at $plugin_dir" >&2
+      echo "Shell plugin $plugin_id has no deployed plugin manifest at $plugin_dir" >&2
       return 1
     }
     [[ -d $source_plugin_dir ]] || {
-      echo "Bar widget $plugin_id has no source plugin at $source_plugin_dir" >&2
+      echo "Shell plugin $plugin_id has no source plugin at $source_plugin_dir" >&2
       return 1
     }
     # Stow deliberately deploys symlinks, while the plugin validator rejects
@@ -180,7 +186,7 @@ validate_bar_setup() {
     omarchy plugin validate "$source_plugin_dir" >/dev/null
   done
 
-  echo "Validated Omarchy bar with ${#plugin_ids[@]} custom widgets."
+  echo "Validated Omarchy shell with ${#plugin_ids[@]} custom plugins."
 }
 
 configure_yazi() {

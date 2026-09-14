@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "david.jira-work",
   "name": "Assigned Jira tickets",
-  "version": "1.0.0",
+  "version": "1.3.0",
   "author": "David Knight",
-  "description": "Unresolved Jira tickets assigned to David.",
+  "description": "Assigned Jira issues, linked tasks, and agent implementation.",
   "kinds": ["bar-widget"],
   "activation": "on-demand",
   "entryPoints": {

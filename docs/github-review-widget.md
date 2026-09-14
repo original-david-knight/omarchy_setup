@@ -3,6 +3,12 @@
 The work PR widget reads review-ticket metadata from Everything App alongside
 the existing authored and requested-review queues.
 
+Both lists offer **Assign**, which lets you choose a project and agent before
+queuing the review. The linked task's project is the default. Opening and
+cancelling the picker do not queue work. See
+[Everything App bar widgets](everything-widgets.md#assign-to-an-agent) for
+assignment behavior and the shared helper.
+
 Each requested-review row offers **Review** or **Re-review**. Both actions ask
 the service to queue the agent on the same review ticket when one exists.
 Queued and running reviews show **Reviewing** in place of the button; the
@@ -13,7 +19,7 @@ opens the linked item in Everything App. Completed agent reviews show
 The agent prepares a private pending GitHub review for the owner to submit.
 Re-reviewing refreshes the agent's pending comments or starts a new draft
 after a prior review was submitted. The widget only calls Everything App's
-review endpoint; it never submits a GitHub review.
+review and assignment endpoints; it never submits a GitHub review.
 
 Credentials remain in the desktop companion's local runtime configuration.
 The helper validates the returned ticket and reports request failures without

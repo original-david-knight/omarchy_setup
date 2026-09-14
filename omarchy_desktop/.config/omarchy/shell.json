@@ -1,6 +1,7 @@
 {
   "bar": {
     "centerAnchor": "omarchy.spacer",
+    "id": "david.bar",
     "layout": {
       "center": [
         {
@@ -43,7 +44,17 @@
           "id": "omarchy.workspaces"
         },
         {
+          "id": "omarchy.spacer",
+          "size": 24
+        },
+        {
           "id": "david.podcasts"
+        },
+        {
+          "id": "david.headset"
+        },
+        {
+          "id": "omarchy.audio"
         }
       ],
       "right": [
@@ -83,9 +94,6 @@
           "id": "omarchy.network"
         },
         {
-          "id": "omarchy.audio"
-        },
-        {
           "id": "omarchy.monitor"
         },
         {
@@ -94,12 +102,46 @@
       ]
     },
     "position": "top",
+    "screenLayouts": [
+      {
+        "name": "portrait side monitors",
+        "match": "portrait",
+        "layout": {
+          "left": [
+            {
+              "id": "omarchy.workspaces"
+            }
+          ],
+          "center": [
+            {
+              "id": "omarchy.clock",
+              "format": "HH:mm",
+              "formatAlt": "d MMMM 'W'ww yyyy",
+              "verticalFormat": "HH\n—\nmm",
+              "birthYear": 1966,
+              "lifeExpectancy": 90
+            }
+          ],
+          "right": []
+        }
+      }
+    ],
     "transparent": false
   },
   "idle": {
     "lock": 600,
     "screensaver": 600
   },
-  "plugins": [],
-  "version": 1
+  "plugins": [
+    {
+      "id": "david.media"
+    }
+  ],
+  "version": 1,
+  "disabledPlugins": [
+    "omarchy.media"
+  ],
+  "cloneSourceRestores": [
+    "david.media"
+  ]
 }

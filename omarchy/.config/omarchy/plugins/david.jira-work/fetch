@@ -15,6 +15,7 @@ curl -fsS --max-time 20 \
     last_error: (.last_error // ""),
     issues: [(.issues // [])[] | {
       key: (.key // ""), title: (.summary // ""), url: (.url // ""),
-      line: (.line // ""), category: (.category // "")
+      line: (.line // ""), category: (.category // ""),
+      task: (if .task == null then null else {id: (.task.id // ""), done: (.task.done == true)} end)
     }]
   }'

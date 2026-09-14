@@ -37,7 +37,17 @@
           "id": "omarchy.workspaces"
         },
         {
+          "id": "omarchy.spacer",
+          "size": 24
+        },
+        {
           "id": "david.podcasts"
+        },
+        {
+          "id": "david.headset"
+        },
+        {
+          "id": "omarchy.audio"
         }
       ],
       "right": [
@@ -55,9 +65,6 @@
         },
         {
           "id": "omarchy.network"
-        },
-        {
-          "id": "omarchy.audio"
         },
         {
           "id": "omarchy.monitor"
@@ -83,6 +90,16 @@
     "lock": 600,
     "screensaver": 600
   },
-  "plugins": [],
-  "version": 1
+  "plugins": [
+    {
+      "id": "david.media"
+    }
+  ],
+  "version": 1,
+  "disabledPlugins": [
+    "omarchy.media"
+  ],
+  "cloneSourceRestores": [
+    "david.media"
+  ]
 }

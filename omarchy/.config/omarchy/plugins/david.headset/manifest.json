@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "david.headset",
+  "name": "Arctis Nova Pro Omni",
+  "version": "1.0.1",
+  "author": "David Knight",
+  "license": "MIT",
+  "description": "SteelSeries Arctis Nova Pro Omni: noise cancelling, DAC volume, microphone, sidetone, equalizer, and battery.",
+  "kinds": ["bar-widget"],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Arctis headset",
+    "description": "ANC, volume, microphone, sidetone, hardware equalizer, and battery for the Arctis Nova Pro Omni.",
+    "category": "Audio",
+    "aliases": ["headset", "arctis", "anc", "steelseries"],
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

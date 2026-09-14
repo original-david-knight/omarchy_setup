@@ -139,6 +139,15 @@
       ]
     },
     {
+      "id": "install_headset",
+      "label": "Allow the Arctis headset widget to reach the base station",
+      "script": "install_headset.sh",
+      "requires": [
+        "public.check_baseline",
+        "public.update_omarchy"
+      ]
+    },
+    {
       "id": "install_obsidian",
       "label": "Install Obsidian",
       "script": "install_obsidian.sh",

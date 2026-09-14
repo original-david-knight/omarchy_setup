@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "david.bar",
+  "name": "Per-screen bar layouts",
+  "version": "1.0.0",
+  "author": "David Knight",
+  "license": "MIT",
+  "description": "Runs the stock Omarchy bar untouched and gives screens matched by bar.screenLayouts in shell.json their own widget layout, so portrait side monitors carry only what fits.",
+  "kinds": [
+    "bar"
+  ],
+  "entryPoints": {
+    "bar": "Bar.qml"
+  }
+}

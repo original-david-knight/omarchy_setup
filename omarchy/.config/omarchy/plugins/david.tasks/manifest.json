@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "david.tasks",
   "name": "Everything tasks",
-  "version": "1.1.0",
+  "version": "1.4.0",
   "author": "David Knight",
-  "description": "The task list from Everything App.",
+  "description": "Tasks, completed history, and assignment to a chosen project and agent.",
   "kinds": ["bar-widget"],
   "activation": "on-demand",
   "entryPoints": {

@@ -57,10 +57,10 @@ class GitHubReviewWidgetTests(unittest.TestCase):
                 pr = {"key": "demo/repo#3", "title": "Change", "url": "https://example.test/pr/3",
                       "line": "review requested", "draft": False}
                 review = {**pr, "review": {"id": "ticket-one", "status": status, "reviewing": busy}}
-                result, calls = call("fetch", json.dumps({"mine": [pr], "review": [review]}))
+                result, calls = call("fetch", json.dumps({"mine": [review], "review": [review]}))
                 self.assertEqual(result.returncode, 0, result.stderr)
                 data = json.loads(result.stdout)
-                self.assertEqual(data["mine"], [pr])
+                self.assertEqual(data["mine"], [review])
                 self.assertEqual(data["review"], [review])
                 self.assertEqual(calls[0]["path"], "/api/github")
 
