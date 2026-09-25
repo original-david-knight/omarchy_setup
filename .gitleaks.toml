@@ -1,0 +1,46 @@
+title = "Public Omarchy setup"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+[[rules.allowlists]]
+description = "Herdr keyboard shortcut, not an API key"
+condition = "AND"
+paths = ['''(^|/)herdr/\.config/herdr/config\.toml$''']
+regexTarget = "line"
+regexes = ['''^\s*key = "ctrl\+alt\+shift\+down"\s*$''']
+
+[[rules]]
+id = "shell-credential-default"
+description = "A credential must not have a literal shell fallback"
+regex = '''(?i)\$\{[a-z0-9_]*(?:password|passcode|passwd|secret|token|api_key)[a-z0-9_]*:-([^$}\r\n]+)\}'''
+secretGroup = 1
+[[rules.allowlists]]
+regexes = ['''^REDACTED$''']
+
+[[rules]]
+id = "literal-password"
+description = "Literal passwords and passcodes, including low entropy values"
+regex = '''(?im)(?:^|[,{])[ \t]*(?:export[ \t]+)?["']?[a-z0-9_]*(?:password|passwd|passcode|psk)["']?[ \t]*[:=][ \t]*["']([^$\r\n"']+)["']'''
+secretGroup = 1
+[[rules.allowlists]]
+regexes = ['''^(?:REDACTED|fixture-only|test-only)$''']
+
+[[rules]]
+id = "wifi-account-default"
+description = "Wi-Fi account identity belongs in local configuration"
+regex = '''\$\{WEWORK_WIFI_IDENTITY:-([^$}\r\n]+)\}'''
+secretGroup = 1
+
+[[rules]]
+id = "private-app-source"
+description = "Private application repository URLs belong in private setup"
+regex = '''(?:https?://github\.com/|git@github\.com:)[A-Za-z0-9_.-]+/everything-app(?:\.git)?\b'''
+
+[[rules]]
+id = "credential-file"
+description = "Local credential stores must never be tracked, even with git add -f"
+path = '''(^|/)(\.env(?:\.[^/]+)?|[^/]+\.env|\.envrc|\.netrc|\.npmrc|\.pypirc|\.git-credentials|credentials\.json|secrets\.json|auth\.json|\.ssh/id_[^/.]+|[^/]+\.(pem|key|p12|pfx|jks|keystore|nmconnection|ovpn|kdbx|age)|[^/]*\.tfstate(?:\.[^/]+)?|\.aws/.*|\.kube/.*|\.config/(everything-agent|lifedash|gh|gcloud|spotifyd)/.*|\.docker/config\.json|\.claude/settings\.local\.json)$'''
+regex = '''(?s).+'''

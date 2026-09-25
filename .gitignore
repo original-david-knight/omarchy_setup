@@ -29,6 +29,19 @@ auth.json
 **/.kube/
 **/.config/everything-agent/
 **/.config/lifedash/
+**/.config/gh/
+**/.config/gcloud/
+**/.config/spotifyd/
+**/.docker/config.json
+**/.codex/auth.json
+**/.claude/settings.local.json
+.envrc
+*.tfstate
+*.tfstate.*
+*.ovpn
+*.nmconnection
+*.kdbx
+*.age
 omarchy-setup-private/
 everything-app/
 

@@ -133,6 +133,8 @@ after logging in. Identical art does not trigger another initramfs rebuild.
 
 ## Verification
 
+Before committing or publishing, run the [secret checks](docs/security.md).
+
 ```sh
 ./verify.sh
 python3 scripts/audit_bootstrap.py

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+repo_dir=$(git rev-parse --show-toplevel)
+export PATH="$HOME/.local/bin:$PATH"
+exec python3 "$repo_dir/scripts/check_secrets.py" --staged

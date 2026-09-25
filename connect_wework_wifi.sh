@@ -42,7 +42,7 @@ Usage:
 
 Environment:
   WEWORK_WIFI_PASSWORD=...              required for connect mode; no stored default
-  WEWORK_WIFI_IDENTITY=...              default: ${IDENTITY}
+  WEWORK_WIFI_IDENTITY=...              required for connect mode; no stored default
   WIFI_DEVICE=...                       default: autodetected (${DEVICE:-none})
   CONNECT_WAIT_SECONDS=...              default: ${CONNECT_WAIT_SECONDS}
   WEWORK_WIFI_SKIP_CERT_VALIDATION=0    use CA/domain validation
@@ -365,6 +365,7 @@ if [[ "${MODE}" == "recover-knight" ]]; then
   die "failed to restore ${FALLBACK_SSID}"
 fi
 
+[[ -n "${IDENTITY}" ]] || die "set WEWORK_WIFI_IDENTITY before connecting"
 [[ -n "${PASSWORD}" ]] || die "set WEWORK_WIFI_PASSWORD before connecting"
 
 write_wework_profile
