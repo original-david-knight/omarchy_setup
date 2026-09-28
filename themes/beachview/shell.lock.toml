@@ -1,6 +1,15 @@
-text             = "#a9b1d6"
-placeholder      = "#a9b1d6"
-text-error       = "#a9b1d6"
-border           = "#a9b1d6"
-border-active    = "#a9b1d6"
-border-error     = "#a9b1d6"
+# Lock screen password field. The shell draws border-active whenever the field
+# is not showing an error, so its turquoise-to-sand gradient is the one seen;
+# border is kept for older shells. Gradients use the Hyprland
+# "color color angle" form.
+background       = "#161a26"
+background-alpha = 0.8
+text             = "#d5d9e3"
+placeholder      = "#8189a8"
+text-error       = "#ff6275"
+border           = "rgba(4f9cffee) rgba(2fd8c8ee) 45deg"
+border-active    = "rgba(2fd8c8ff) rgba(f5d06aff) 45deg"
+border-error     = "#ff6275"
+border-alpha     = 1.0
+selection        = "#2fd8c8"
+selection-alpha  = 0.45

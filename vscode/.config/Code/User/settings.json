@@ -163,7 +163,7 @@
   "terminal.integrated.env.linux": {
     "TERM": "xterm-256color",
   },
-  "workbench.colorTheme": "Tokyo Night",
+  "workbench.colorTheme": "Omarchy",
   "geminicodeassist.project": "wilder-419415",
   "diffEditor.codeLens": true,
   "cloudcode.duetAI.project": "wilder-419415",
