@@ -20,7 +20,7 @@
     "terminal.foreground": "#80ff80",
     "panel.background": "#101016",
     "minimap.background": "#151518",
-    "contrastBorder": "#303040"
+    "contrastBorder": "#303040",
   },
   "bazel.buildifierExecutable": "/usr/bin/buildifier",
   "bazel.buildifierFixOnFormat": true,
@@ -37,7 +37,7 @@
     "editor.suggest.snippetsPreventQuickSuggestions": false,
     "editor.suggestSelection": "first",
     "editor.tabCompletion": "onlySnippets",
-    "editor.wordBasedSuggestions": "off"
+    "editor.wordBasedSuggestions": "off",
   },
   "cmake.configureOnOpen": false,
   "dart.showInspectorNotificationsForWidgetErrors": false,
@@ -48,7 +48,7 @@
     "editor.defaultFormatter": "charliermarsh.ruff",
     "editor.insertSpaces": true,
     "editor.tabSize": 2,
-    "editor.formatOnType": true
+    "editor.formatOnType": true,
   },
 
   "python.linting.pylintArgs": ["--indent-string=\"  \""],
@@ -66,7 +66,7 @@
     "editor.wordBasedSuggestions": "off",
     "editor.suggest.insertMode": "replace",
     "editor.semanticHighlighting.enabled": true,
-    "editor.defaultFormatter": "ms-vscode.cpptools"
+    "editor.defaultFormatter": "ms-vscode.cpptools",
   },
   "dart.lineLength": 120,
   "dart.renameFilesWithClasses": "prompt",
@@ -77,42 +77,42 @@
     "plaintext": true,
     "markdown": false,
     "scminput": false,
-    "yaml": true
+    "yaml": true,
   },
   "files.watcherExclude": {
     "p3": true,
     "python_env": true,
-    "venv": true
+    "venv": true,
   },
   "java.import.gradle.java.home": "/usr/lib/jvm/java-11-openjdk",
-  "dart.flutterSdkPath": "/home/david/bin/flutter",
+  "dart.flutterSdkPath": "/home/david/.local/flutter",
   "git.openRepositoryInParentFolders": "always",
   "editor.mouseWheelZoom": true,
   "files.exclude": {
     "**/__pycache*": true,
     "**/.build": true,
-    "**/.pytest*": true
+    "**/.pytest*": true,
   },
   "mojo.modularHomePath": "/home/david/.modular",
   "[typescriptreact]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
   },
   "[javascript]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
   },
   "typescript.updateImportsOnFileMove.enabled": "always",
   "cmake.showOptionsMovedNotification": false,
   "[typescript]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
   },
   "[cpp][dart]": {
-    "editor.wordBasedSuggestions": "off"
+    "editor.wordBasedSuggestions": "off",
   },
   "[html]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
   },
   "[jsonc]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
   },
   "azureResourceGroups.selectedSubscriptions": [],
   "bicep.enableSurveys": false,
@@ -120,10 +120,10 @@
   "debug.onTaskErrors": "showErrors",
   "npm.packageManager": "pnpm",
   "[csharp]": {
-    "editor.defaultFormatter": "csharpier.csharpier-vscode"
+    "editor.defaultFormatter": "csharpier.csharpier-vscode",
   },
   "files.associations": {
-    "*.css": "tailwindcss"
+    "*.css": "tailwindcss",
   },
   "jupyter.interactiveWindow.creationMode": "perFile",
   "cloudcode.project": "wilder-419415",
@@ -132,7 +132,7 @@
   "git.autofetch": true,
   "github.copilot.editor.enableAutoCompletions": true,
   "[toml]": {
-    "editor.defaultFormatter": "tamasfe.even-better-toml"
+    "editor.defaultFormatter": "tamasfe.even-better-toml",
   },
   "javascript.updateImportsOnFileMove.enabled": "always",
   "telemetry.telemetryLevel": "off",
@@ -142,11 +142,11 @@
     "foreground": "#ffff00",
     "iconColour": "#ffff00",
     "fontWeight": "bold",
-    "type": "text-and-comment"
+    "type": "text-and-comment",
   },
   "ruff.lineLength": 120,
   "[xml]": {
-    "editor.defaultFormatter": "redhat.vscode-xml"
+    "editor.defaultFormatter": "redhat.vscode-xml",
   },
   "editor.colorDecoratorsActivatedOn": "hover",
   "editor.defaultColorDecorators": "auto",
@@ -155,13 +155,13 @@
   "editor.formatOnSave": true,
   "cmake.pinnedCommands": ["workbench.action.tasks.configureTaskRunner", "workbench.action.tasks.runTask"],
   "[c]": {
-    "editor.defaultFormatter": "ms-vscode.cpptools"
+    "editor.defaultFormatter": "ms-vscode.cpptools",
   },
   "[cuda-cpp]": {
-    "editor.defaultFormatter": "ms-vscode.cpptools"
+    "editor.defaultFormatter": "ms-vscode.cpptools",
   },
   "terminal.integrated.env.linux": {
-    "TERM": "xterm-256color"
+    "TERM": "xterm-256color",
   },
   "workbench.colorTheme": "Tokyo Night",
   "geminicodeassist.project": "wilder-419415",
@@ -175,5 +175,6 @@
   "claudeCode.initialPermissionMode": "bypassPermissions",
   "claudeCode.respectGitIgnore": false,
   "explorer.confirmPasteNative": false,
-  "chat.disableAIFeatures": true
+  "chat.disableAIFeatures": true,
+  "go.toolsManagement.autoUpdate": true,
 }
