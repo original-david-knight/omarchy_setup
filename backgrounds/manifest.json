@@ -1,33 +1,33 @@
 {
   "version": 1,
-  "selected": "tokyo-night/Gemini_Generated_Image_3252l33252l33252.png",
+  "selected": "beachview/Gemini_Generated_Image_3252l33252l33252.png",
   "files": [
     {
-      "path": "tokyo-night/Gemini_Generated_Image_3252l33252l33252.png",
+      "path": "beachview/Gemini_Generated_Image_3252l33252l33252.png",
       "sha256": "aa28d6a9886546b7f8a97ca02e54461afe0c811b010092b602bf6a5c211d7789"
     },
     {
-      "path": "tokyo-night/Gemini_Generated_Image_u0jiktu0jiktu0ji.png",
+      "path": "beachview/Gemini_Generated_Image_u0jiktu0jiktu0ji.png",
       "sha256": "7fb5ed9eeb4ed59c70b09a31b13262196ca2a43975a7837857f2abd5eb959981"
     },
     {
-      "path": "tokyo-night/Gemini_Generated_Image_u7rqdeu7rqdeu7rq.png",
+      "path": "beachview/Gemini_Generated_Image_u7rqdeu7rqdeu7rq.png",
       "sha256": "ae1428b681fa1751b2c5550ebcda41cd9b8cb00c5aff46214c6f0e8afa8429fe"
     },
     {
-      "path": "tokyo-night/desktop_grey_julia.png",
+      "path": "beachview/desktop_grey_julia.png",
       "sha256": "e07dffd8ec2a9af86aa36b5ce9458661839a3e4ed4a65485661432cbe5e60862"
     },
     {
-      "path": "tokyo-night/fractals-20260901-203320-653.png",
+      "path": "beachview/fractals-20260901-203320-653.png",
       "sha256": "3c594938804f65f23c974b6a18d07410ef6f94150321d0d6d2dc33ad27434764"
     },
     {
-      "path": "tokyo-night/fractals-20260901-203349-422.png",
+      "path": "beachview/fractals-20260901-203349-422.png",
       "sha256": "f26cf7713016cb4d4be9435aeb327c87cf6e0f3684f0b4457e543fedfa2534ac"
     },
     {
-      "path": "tokyo-night/gen_fractal_milky.png",
+      "path": "beachview/gen_fractal_milky.png",
       "sha256": "692b2f2dc8d323450d82e40033b480cbfcc62b28a17688ab948de360571307aa"
     }
   ]

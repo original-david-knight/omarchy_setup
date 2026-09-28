@@ -242,6 +242,46 @@ configure_yazi() {
   fi
 }
 
+install_theme() {
+  local source="$repo_dir/themes/beachview"
+  local themes_dir="$target_home/.config/omarchy/themes"
+  local target="$themes_dir/beachview"
+
+  # `omarchy theme set` copies a theme folder's entries with `cp -r`, which
+  # would copy per-file Stow links verbatim and break them. Link the whole
+  # folder instead; Omarchy treats a symlinked theme as the user's own.
+  mkdir -p "$themes_dir"
+  if [[ -L $target && $(realpath -- "$target") == "$source" ]]; then
+    return
+  fi
+  if [[ -e $target || -L $target ]]; then
+    backup_target ".config/omarchy/themes/beachview"
+  fi
+  ln -s "$(realpath --relative-to="$themes_dir" -- "$source")" "$target"
+}
+
+select_theme() {
+  local state="$target_home/.local/state/omarchy/current"
+  local background_dir="$target_home/.config/omarchy/backgrounds/beachview"
+  local current_background
+
+  [[ ${OMARCHY_SETUP_ACTIVATE:-1} == 1 && $resolved_target_home == "$(realpath -m -- "$HOME")" ]] || return 0
+  [[ $(cat "$state/theme.name" 2>/dev/null) != beachview ]] || return 0
+  command -v omarchy >/dev/null 2>&1 || {
+    echo "Omarchy is not installed; Beachview theme was not selected." >&2
+    return 0
+  }
+
+  # Selecting a theme advances to the next of its wallpapers. When a Beachview
+  # wallpaper is already showing (the bundled first-install selection), keep it.
+  current_background=$(realpath -m -- "$state/background" 2>/dev/null || true)
+  if [[ $current_background == "$(realpath -m -- "$background_dir")/"* ]]; then
+    OMARCHY_THEME_SKIP_BACKGROUND=1 omarchy theme set Beachview
+  else
+    omarchy theme set Beachview
+  fi
+}
+
 # Unstow mutually exclusive packages first so switching machine profiles does
 # not leave links from the previous profile behind.
 if (( ! bar_only )); then
@@ -275,6 +315,8 @@ validate_bar_setup
 if (( ! bar_only )); then
   python3 "$repo_dir/scripts/configure_ssh.py" --target "$target_home"
   python3 "$repo_dir/scripts/install_backgrounds.py" --target "$target_home"
+  install_theme
+  select_theme
   configure_yazi
   HOME="$target_home" XDG_CONFIG_HOME="$target_home/.config" \
     xdg-mime default google-chrome.desktop x-scheme-handler/http x-scheme-handler/https text/html

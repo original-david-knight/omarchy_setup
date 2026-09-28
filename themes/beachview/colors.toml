@@ -1,0 +1,39 @@
+mode = "dark"
+
+# Beachview: Tokyo Night's structure with hues pushed apart so each syntax
+# class reads as its own color. Plain text is a neutral off-white rather than
+# Tokyo Night's blue-grey, magenta leans orchid instead of violet, cyan is a
+# bright turquoise distinct from the ocean blue, and bright variants are
+# visibly lighter than their normal counterparts.
+
+accent = "#2fd8c8"
+# Window borders stay quiet: a desaturated sea-slate instead of the accent.
+hyprland_active_border = "#5d7686"
+selection = "#2c3350"
+muted = "#6c7596"
+
+background = "#161a26"
+dark_background = "#11141d"
+darker_background = "#0c0e15"
+lighter_background = "#20263a"
+
+foreground = "#d5d9e3"
+dark_foreground = "#8189a8"
+light_foreground = "#e2e5ee"
+bright_foreground = "#f2f4f8"
+
+red = "#ff6275"
+yellow = "#f5d06a"
+orange = "#ff9a4d"
+green = "#86dc5e"
+cyan = "#2fd8c8"
+blue = "#4f9cff"
+magenta = "#e07ae8"
+brown = "#a8744f"
+
+bright_red = "#ff9aa6"
+bright_yellow = "#ffe6a0"
+bright_green = "#b8f59a"
+bright_cyan = "#94f2e8"
+bright_blue = "#a3c9ff"
+bright_magenta = "#f2b3f5"

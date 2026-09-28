@@ -14,10 +14,10 @@ no personal setup checkout, private application sources, credentials, browser
 sessions, or account data. The installer module that copies these files is also public.
 
 Backgrounds retain their theme folders under `~/.config/omarchy/backgrounds`.
-The custom bundle contains only the seven added Tokyo Night images. Omarchy
+The custom bundle contains only the seven images for the Beachview theme. Omarchy
 continues to provide its stock backgrounds through the normal installation.
 The initial selection is the starry-sky image with two children,
-`tokyo-night/Gemini_Generated_Image_3252l33252l33252.png`. The installer copies
+`beachview/Gemini_Generated_Image_3252l33252l33252.png`. The installer copies
 the images and stages a portable background link for both direct and deferred
 user creation. First login reapplies this selection after Omarchy's finalizer,
 before waiting for network access. A local completion marker preserves later

@@ -106,6 +106,19 @@ installs the Omarchy `theme-set` hook, generates the initial theme, reloads
 Hyprland, and restarts the portal. The hook regenerates
 `~/.config/yazi/theme.toml` from the active Omarchy theme's `colors.toml`.
 
+## Beachview theme
+
+`themes/beachview/` is the custom Omarchy theme, a higher-contrast fork of
+Tokyo Night. `colors.toml` drives Ghostty (which loads the theme's generated
+`ghostty.conf`), herdr (`terminal` theme), Neovim (generated `aether`
+colorscheme), btop, and Hyprland borders (`hyprland_active_border`).
+`stow_all.sh` links the whole folder to `~/.config/omarchy/themes/beachview`
+rather than stowing per-file links, because `omarchy theme set` copies theme
+entries with `cp -r` and would break relative file links. It then selects
+Beachview when another theme is active. Its wallpapers are the bundled
+`backgrounds/beachview/` images; Omarchy's stock wallpapers are not used.
+Apply edits with `omarchy theme set Beachview`.
+
 ## Hyprland on Quattro
 
 Hyprland configuration is Lua-based:

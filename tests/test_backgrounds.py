@@ -36,7 +36,7 @@ class BackgroundTests(unittest.TestCase):
 
     def test_rerun_keeps_a_later_wallpaper_choice_and_additional_images(self):
         backgrounds.install(self.source, self.home)
-        custom = self.home / '.config/omarchy/backgrounds/tokyo-night/later.png'
+        custom = self.home / '.config/omarchy/backgrounds/beachview/later.png'
         custom.write_bytes(b'fixture later wallpaper')
         self.link.unlink()
         self.link.symlink_to(custom)
