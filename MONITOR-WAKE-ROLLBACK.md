@@ -75,15 +75,56 @@ hyprctl monitors all
 Confirm all three displays have their expected resolutions, then verify that
 they survive the normal idle/lock/display-sleep cycle. Record the result here.
 
-Validation status: reboot and an idle/wake test are still pending.
+Original September 9 validation status: reboot and an idle/wake test were still
+pending. See the September 21 follow-up below for the current running version.
 
-## Removing the hold when a fix is available
+## Follow-up: September 21, 2026
 
-Check [issue #386](https://github.com/hyprwm/aquamarine/issues/386) and the
-[Aquamarine releases](https://github.com/hyprwm/aquamarine/releases) for a fix
-to disconnected-output cleanup. A newer version alone is not proof of a fix.
-[PR #395](https://github.com/hyprwm/aquamarine/pull/395) has reported successful
-testing, but was closed without merging; it is not installed here.
+**Recommendation: keep all three holds for now. The matching upstream bug has
+a released fix, but this machine's configured stable repositories still offer
+the affected versions.**
+
+- [PR #410](https://github.com/hyprwm/aquamarine/pull/410) merged September 15
+  and closed [issue #386](https://github.com/hyprwm/aquamarine/issues/386).
+  It explicitly disables the kernel display output before disconnect cleanup,
+  addressing the stale-CRTC mechanism identified in this incident.
+- [Aquamarine v0.15.1](https://github.com/hyprwm/aquamarine/releases/tag/v0.15.1),
+  published September 17 UTC, includes that fix. Arch's normal `extra`
+  repository has [0.15.1-1](https://archlinux.org/packages/extra/x86_64/aquamarine/).
+  The earlier [PR #395](https://github.com/hyprwm/aquamarine/pull/395) remains
+  unmerged; #410 is the shipped fix.
+- A [September 19 NVIDIA RTX report](https://github.com/omacom/omarchy/issues/11249#issuecomment-5743230408)
+  confirms DisplayPort wake works after manually installing 0.15.1-1.
+  An [Intel report](https://github.com/hyprwm/aquamarine/issues/386#issuecomment-5711421996)
+  also confirms repeated monitor power-cycle recovery. However, a
+  [September 18 Panther Lake/xe report](https://github.com/hyprwm/aquamarine/issues/386#issuecomment-5735809983)
+  still describes hotplug failure on 0.15.1, with a pending-page-flip error;
+  whether that is the same bug is unconfirmed. The separate hybrid-NVIDIA
+  [issue #391](https://github.com/hyprwm/aquamarine/issues/391) remains open.
+
+Live repository indexes were downloaded and inspected September 21 at about
+15:59 UTC, independently of the local pacman cache. `/etc/pacman.d/mirrorlist`
+uses `https://stable-mirror.omarchy.org/$repo/os/$arch`. Its
+[extra index](https://stable-mirror.omarchy.org/extra/os/x86_64/extra.db)
+still has:
+
+| Package | Configured stable repository version |
+| --- | --- |
+| aquamarine | 0.15.0-2 |
+| hyprland | 0.56.2-2 |
+| hyprtoolkit | 0.5.4-5 |
+
+The live [Omarchy package index](https://pkgs.omarchy.org/stable/x86_64/omarchy.db)
+contains no override for these packages. Simply removing the holds and updating
+would therefore reinstall the affected set.
+
+Local checks still show the three rollback versions installed and held.
+`hyprctl version` confirms the running compositor uses Aquamarine 0.14.0, and
+all three monitors currently report their expected resolutions. No sleep/wake
+test or test of 0.15.1 was performed during this investigation. No packages,
+holds, repository settings, or system package databases were changed.
+
+## Removing the hold once fixed packages reach the configured repositories
 
 Once a fixed release and compatible packages reach the configured repositories:
 
