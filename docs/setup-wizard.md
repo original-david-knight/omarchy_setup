@@ -47,7 +47,7 @@ repository. GitHub CLI checks validate both saved accounts individually, even
 when only one is active.
 
 Desktop configuration installs the seven bundled custom backgrounds, retaining
-their theme folders. On first application it selects the saved starry-sky image;
+their theme folders. On first application it selects the purple fractal image;
 later runs preserve your wallpaper selection and any additional images. To add
 the collection to an existing installation without running the full wizard:
 
