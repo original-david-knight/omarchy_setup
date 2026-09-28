@@ -118,6 +118,9 @@ entries with `cp -r` and would break relative file links. It then selects
 Beachview when another theme is active. Its wallpapers are the bundled
 `backgrounds/beachview/` images; Omarchy's stock wallpapers are not used.
 Apply edits with `omarchy theme set Beachview`.
+Redraw the theme picker's `preview.png` after palette, icon, or default
+wallpaper changes with `python3 scripts/render_theme_preview.py`; it draws
+invented content so no session data reaches the public repo.
 
 ## Hyprland on Quattro
 
