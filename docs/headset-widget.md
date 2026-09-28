@@ -11,9 +11,11 @@ HID interface carries every setting SteelSeries GG exposes. The widget talks
 to it directly; SteelSeries GG, Arctis Sound Manager, and HeadsetControl are
 not needed and not touched.
 
-The bar shows a headset glyph, the base station volume, and a red mic glyph
-while the microphone is muted. The glyph takes the accent colour while ANC is
-on and dims when the headset is off or unplugged.
+The bar shows a headset glyph, the base station volume, a battery icon with the
+headphone charge percentage, and a red mic glyph while the microphone is muted.
+The battery turns red at 15% or below unless charging. Compact bars keep the
+headset glyph alone and turn it red for low battery. Otherwise the headset glyph
+takes the accent colour while ANC is on and dims when the headset is off or unplugged.
 
 - **Left click** opens the panel. **Middle click** switches ANC on or off.
   **Right click** mutes or unmutes the microphone. **Scroll** turns the base

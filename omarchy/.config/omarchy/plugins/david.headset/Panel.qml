@@ -42,6 +42,8 @@ Panel {
   readonly property int battery: deviceState.battery === undefined || deviceState.battery === null ? -1 : Number(deviceState.battery)
   readonly property int spareBattery: deviceState.spare_battery === undefined || deviceState.spare_battery === null ? -1 : Number(deviceState.spare_battery)
   readonly property string charging: String(deviceState.charging || "unknown")
+  readonly property bool batteryLow: online && battery >= 0 && battery <= 15 && charging !== "charging"
+  readonly property color batteryColor: batteryLow ? (bar ? bar.urgent : Color.urgent) : foreground
   readonly property bool hasVolume: deviceState.volume !== undefined && deviceState.volume !== null
   readonly property int volume: hasVolume ? Number(deviceState.volume) : 0
   readonly property bool micHardMuted: !!deviceState.mic_muted
@@ -79,7 +81,7 @@ Panel {
   }
 
   function batteryGlyph() {
-    if (!online) return "󰂑"
+    if (!online || battery < 0) return "󰂑"
     if (charging === "charging") return "󰂄"
     if (battery >= 90) return "󰁹"
     if (battery >= 70) return "󰂁"
@@ -236,9 +238,10 @@ Panel {
     text: "󰋎"
     labelVisible: false
     dimmed: !root.online
-    fixedWidth: root.compactBar || !root.online ? Style.space(34) : Style.space(root.hasVolume ? 82 : 58)
+    fixedWidth: root.compactBar || !root.online ? Style.space(34) : Math.ceil(barContents.implicitWidth) + Style.space(20)
     tooltipText: "Arctis Nova Pro Omni · " + root.heroMeta + "\n" + root.ancLabel
       + (root.online ? (root.micLive ? " · mic live" : root.micHardMuted ? " · mic muted on the headset" : " · mic muted") : "")
+      + (root.online && root.hasVolume ? "\nHeadset volume " + root.volume + "%" : "")
       + "\nLeft: panel · Middle: ANC on/off · Right: mic · Scroll: headset volume"
     onPressed: function(code) {
       if (code === Qt.MiddleButton) root.toggleAnc()
@@ -252,6 +255,7 @@ Panel {
     }
 
     Row {
+      id: barContents
       anchors.centerIn: parent
       spacing: Style.space(6)
 
@@ -259,7 +263,8 @@ Panel {
         anchors.verticalCenter: parent.verticalCenter
         text: "󰋎"
         textFormat: Text.PlainText
-        color: root.online && root.ancOn ? Color.accent : root.foreground
+        color: root.compactBar && root.batteryLow ? root.batteryColor
+          : root.online && root.ancOn ? Color.accent : root.foreground
         font.family: root.fontFamily
         font.pixelSize: Style.bar.iconFont
         renderType: Text.NativeRendering
@@ -272,6 +277,29 @@ Panel {
         color: root.foreground
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
+      }
+      Row {
+        visible: !root.compactBar && root.online
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: Style.space(4)
+
+        Text {
+          anchors.verticalCenter: parent.verticalCenter
+          text: root.batteryGlyph()
+          textFormat: Text.PlainText
+          color: root.batteryColor
+          font.family: root.fontFamily
+          font.pixelSize: Style.bar.iconFont
+          renderType: Text.NativeRendering
+        }
+        Text {
+          anchors.verticalCenter: parent.verticalCenter
+          text: root.battery >= 0 ? root.battery + "%" : "—"
+          textFormat: Text.PlainText
+          color: root.batteryColor
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.bodySmall
+        }
       }
       Text {
         visible: !root.compactBar && root.online && !root.micLive
