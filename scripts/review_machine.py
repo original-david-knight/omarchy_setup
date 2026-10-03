@@ -15,7 +15,7 @@ def main():
     differences = []
     for package in PACKAGES:
         for source in sorted((ROOT / package).rglob("*")):
-            if not source.is_file() or source.name.startswith(".") or ".bak" in source.name:
+            if not source.is_file() or source.name == ".gitignore" or ".bak" in source.name:
                 continue
             relative = source.relative_to(ROOT / package)
             target = HOME / relative
