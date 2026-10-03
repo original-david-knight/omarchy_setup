@@ -4,7 +4,6 @@ set -euo pipefail
 
 repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 target_home=${OMARCHY_SETUP_TARGET:-$HOME}
-profile=${OMARCHY_SETUP_PROFILE:-auto}
 backup_root=""
 bar_only=0
 case ${1:-} in
@@ -27,48 +26,8 @@ command -v stow >/dev/null 2>&1 || {
 
 mkdir -p "$target_home"
 
-get_monitor_count() {
-  local count=0 status
-  local -a statuses=()
-
-  if command -v hyprctl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
-    count=$(hyprctl monitors -j 2>/dev/null | jq -r 'length' 2>/dev/null || true)
-    if [[ $count =~ ^[0-9]+$ ]] && ((count > 0)); then
-      printf '%s\n' "$count"
-      return
-    fi
-  fi
-
-  shopt -s nullglob
-  statuses=(/sys/class/drm/*/status)
-  shopt -u nullglob
-  for status in "${statuses[@]}"; do
-    if [[ $(<"$status") == connected ]]; then
-      ((count += 1))
-    fi
-  done
-
-  # A headless/TTY run cannot reliably distinguish the machines. Selecting the
-  # laptop profile is the conservative fallback and can be overridden below.
-  ((count > 0)) || count=1
-  printf '%s\n' "$count"
-}
-
-case $profile in
-  auto)
-    monitor_count=$(get_monitor_count)
-    if ((monitor_count > 1)); then
-      profile=desktop
-    else
-      profile=laptop
-    fi
-    ;;
-  desktop | laptop) ;;
-  *)
-    echo "OMARCHY_SETUP_PROFILE must be auto, desktop, or laptop (got: $profile)." >&2
-    exit 1
-    ;;
-esac
+source "$repo_dir/scripts/setup_profile.sh"
+profile=$(setup_profile)
 
 ensure_backup_root() {
   if [[ -z $backup_root ]]; then

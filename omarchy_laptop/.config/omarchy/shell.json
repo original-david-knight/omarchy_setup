@@ -55,6 +55,10 @@
           "id": "omarchy.tray"
         },
         {
+          "id": "david.meeting",
+          "litra": false
+        },
+        {
           "id": "omarchy.tailscale"
         },
         {

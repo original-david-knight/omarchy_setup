@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+"""Return today's timed work events from the existing Everything App feed."""
+
+import http.client
+import json
+import os
+import re
+import urllib.error
+import urllib.parse
+import urllib.request
+from datetime import date, datetime
+from pathlib import Path
+
+
+STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\Z")
+DAY = re.compile(r"\d{4}-\d{2}-\d{2}\Z")
+
+
+class CalendarError(Exception):
+    def __init__(self, status, message):
+        self.status = status
+        self.message = message
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    """A redirect must not forward the local bearer to another URL."""
+
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        return None
+
+
+def config_path():
+    folder = os.environ.get("EVERYTHING_AGENT_CONFIG_DIR")
+    return Path(folder) / "config.json" if folder else Path.home() / ".config/everything-agent/config.json"
+
+
+def read_config():
+    try:
+        config = json.loads(config_path().read_text())
+        base = config["service_url"]
+        token = config["token"]
+        if not isinstance(base, str) or not isinstance(token, str) or not token or any(ord(char) < 32 for char in token):
+            raise ValueError("invalid config")
+        parsed = urllib.parse.urlsplit(base)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+            raise ValueError("invalid URL")
+        return base.rstrip("/"), token
+    except (OSError, ValueError, TypeError, KeyError):
+        raise CalendarError("error", "Everything App configuration is unavailable") from None
+
+
+def fetch_today(base, token):
+    try:
+        request = urllib.request.Request(base + "/api/today", headers={"Authorization": "Bearer " + token})
+        opener = urllib.request.build_opener(NoRedirect, urllib.request.ProxyHandler({}))
+        with opener.open(request, timeout=20) as response:
+            raw = response.read(2_000_001)
+        if len(raw) > 2_000_000:
+            raise ValueError("response too large")
+        return json.loads(raw)
+    except (OSError, ValueError, TypeError, http.client.HTTPException, urllib.error.URLError):
+        raise CalendarError("error", "Everything App calendar could not be loaded") from None
+
+
+def parse_stamp(value):
+    if not isinstance(value, str) or not STAMP.fullmatch(value):
+        raise ValueError("invalid timestamp")
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.utcoffset() is None:
+        raise ValueError("missing offset")
+    return parsed
+
+
+def normalize(feed):
+    if not isinstance(feed, dict) or not isinstance(feed.get("connected"), bool):
+        raise CalendarError("error", "Everything App returned an unreadable calendar")
+    if not feed["connected"]:
+        raise CalendarError("disconnected", "Connect a calendar in Everything App")
+
+    day = feed.get("date")
+    if not isinstance(day, str) or not DAY.fullmatch(day):
+        raise CalendarError("error", "Everything App returned an unreadable calendar")
+    try:
+        parsed_day = date.fromisoformat(day)
+    except ValueError:
+        raise CalendarError("error", "Everything App returned an unreadable calendar") from None
+    if parsed_day != datetime.now().astimezone().date():
+        raise CalendarError("stale", "Today's calendar is not available yet")
+
+    rows = feed.get("events")
+    if not isinstance(rows, list):
+        raise CalendarError("error", "Everything App returned an unreadable calendar")
+    events = []
+    try:
+        for row in rows:
+            if not isinstance(row, dict):
+                raise ValueError("invalid event")
+            if row.get("account") != "work":
+                continue
+            if not isinstance(row.get("all_day"), bool) or not isinstance(row.get("declined"), bool):
+                raise ValueError("invalid event flags")
+            if row["all_day"] or row["declined"]:
+                continue
+            if row.get("canceled") is True or row.get("cancelled") is True or row.get("status") in ("canceled", "cancelled"):
+                continue
+            starts_at, ends_at = row["starts_at"], row["ends_at"]
+            if parse_stamp(ends_at) <= parse_stamp(starts_at):
+                raise ValueError("invalid range")
+            event_id, title = row["id"], row["title"]
+            calendar_name = row.get("calendar_name") or ""
+            location = row.get("location") or ""
+            if not all(isinstance(value, str) for value in (event_id, title, calendar_name, location)):
+                raise ValueError("invalid text")
+            events.append({"id": event_id, "title": title, "starts_at": starts_at,
+                           "ends_at": ends_at, "calendar_name": calendar_name, "location": location})
+    except (KeyError, TypeError, ValueError):
+        raise CalendarError("error", "Everything App returned an unreadable calendar") from None
+
+    last_sync = feed.get("last_sync") or ""
+    last_error = feed.get("last_error") or ""
+    if not isinstance(last_sync, str) or not isinstance(last_error, str):
+        raise CalendarError("error", "Everything App returned an unreadable calendar")
+    if not last_sync:
+        raise CalendarError("stale", "Waiting for Everything App to sync today's calendar")
+    events.sort(key=lambda event: (parse_stamp(event["starts_at"]), event["id"]))
+    return {"status": "ready", "date": day, "events": events, "last_sync": last_sync,
+            "warning": "Calendar sync reported an error; events may be outdated" if last_error else ""}
+
+
+def main():
+    try:
+        base, token = read_config()
+        result = normalize(fetch_today(base, token))
+    except CalendarError as error:
+        result = {"status": error.status, "message": error.message}
+    print(json.dumps(result, separators=(",", ":")))
+    return 0 if result["status"] == "ready" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

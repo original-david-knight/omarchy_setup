@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "david.meeting",
+  "name": "Meeting",
+  "version": "1.0.0",
+  "author": "David Knight",
+  "license": "MIT",
+  "description": "Work meetings from Everything App, Meeting Recorder, and Logitech Litra Glow controls.",
+  "kinds": ["bar-widget"],
+  "activation": "on-demand",
+  "entryPoints": { "barWidget": "Panel.qml" },
+  "barWidget": {
+    "displayName": "Meeting",
+    "description": "Next work meeting today, recording, light brightness and color temperature.",
+    "category": "Productivity",
+    "aliases": ["meeting", "calendar", "recorder", "litra", "light"],
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

@@ -148,6 +148,17 @@
       ]
     },
     {
+      "id": "install_meeting",
+      "label": "Install the meeting widget and desktop light access",
+      "script": "install_meeting.sh",
+      "profile_sensitive": true,
+      "inputs": ["install_meeting.sh", "scripts/setup_profile.sh", "omarchy/.config/omarchy/plugins/david.meeting"],
+      "requires": [
+        "public.check_baseline",
+        "public.update_omarchy"
+      ]
+    },
+    {
       "id": "install_obsidian",
       "label": "Install Obsidian",
       "script": "install_obsidian.sh",
@@ -330,6 +341,7 @@
       "script": "stow_all.sh",
       "inputs": [
         "stow_all.sh",
+        "scripts/setup_profile.sh",
         "activate.sh",
         "scripts/configure_ssh.py",
         "scripts/install_backgrounds.py",

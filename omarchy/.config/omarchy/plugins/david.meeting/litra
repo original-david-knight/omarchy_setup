@@ -1,0 +1,196 @@
+#!/usr/bin/env python3
+"""Read or set a Litra Glow through Linux hidraw, returning one JSON object.
+
+Protocol: https://github.com/timrogers/litra-rs/blob/main/src/lib.rs
+Only a complete device readback produces status=ready. No device state is saved.
+"""
+from contextlib import contextmanager
+import errno
+import fcntl
+import json
+import os
+from pathlib import Path
+import select
+import sys
+import time
+
+HID_ID = "HID_ID=0003:0000046D:0000C900"
+HEADER = b"\x11\xff\x04"
+REPORT_SIZE = 20
+QUERY_TIMEOUT = 1.0
+LOCK_TIMEOUT = 2.0
+SETTINGS = {
+    "power": (0x01, 0x1C, 1, 0, 1, 1),
+    "brightness": (0x31, 0x4C, 2, 20, 250, 1),
+    "temperature": (0x81, 0x9C, 2, 2700, 6500, 100),
+}
+
+
+class LightError(Exception):
+    def __init__(self, status, message):
+        super().__init__(message)
+        self.status = status
+
+
+def parse_command(args):
+    if args == ["status"]:
+        return None
+    if len(args) != 3 or args[0] != "set" or args[1] not in SETTINGS:
+        raise LightError("error", "Use status, or set power, brightness, or temperature.")
+    _, key, raw = args
+    if key == "power":
+        if raw not in ("on", "off"):
+            raise LightError("error", "Power must be on or off.")
+        return key, int(raw == "on")
+    _, _, _, low, high, step = SETTINGS[key]
+    try:
+        value = int(raw)
+    except ValueError:
+        raise LightError("error", f"{key.capitalize()} must be an integer.") from None
+    if not low <= value <= high or value % step:
+        raise LightError("error", f"{key.capitalize()} must be {low} to {high} in steps of {step}.")
+    return key, value
+
+
+def vendor_usage(descriptor):
+    """Read HID short items, rather than matching bytes inside an item's data."""
+    offset = 0
+    while offset < len(descriptor):
+        prefix = descriptor[offset]
+        offset += 1
+        if prefix == 0xFE:
+            if offset + 2 > len(descriptor):
+                return False
+            offset += 2 + descriptor[offset]
+            continue
+        size = (0, 1, 2, 4)[prefix & 3]
+        data = descriptor[offset:offset + size]
+        if len(data) != size:
+            return False
+        if prefix & 0xFC == 0x04 and int.from_bytes(data, "little") == 0xFF43:
+            return True
+        offset += size
+    return False
+
+
+def find_device(root=Path("/sys/class/hidraw"), dev_root=Path("/dev")):
+    for entry in sorted(root.glob("hidraw*")):
+        try:
+            if HID_ID not in (entry / "device/uevent").read_text().upper().splitlines():
+                continue
+            if vendor_usage((entry / "device/report_descriptor").read_bytes()):
+                return dev_root / entry.name
+        except FileNotFoundError:
+            continue
+    raise LightError("missing", "Litra Glow is not connected.")
+
+
+@contextmanager
+def device_lock(path):
+    runtime = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
+    lock_path = runtime / f"david-meeting-litra-{path.name}.lock"
+    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW, 0o600)
+    try:
+        deadline = time.monotonic() + LOCK_TIMEOUT
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise LightError("busy", "Litra Glow is busy. Try again.") from None
+                time.sleep(min(0.02, remaining))
+        yield
+    finally:
+        os.close(fd)
+
+
+class Device:
+    def __init__(self, path):
+        self.fd = os.open(path, os.O_RDWR | os.O_NONBLOCK | os.O_CLOEXEC)
+
+    def close(self):
+        os.close(self.fd)
+
+    def write(self, data):
+        if os.write(self.fd, data) != len(data):
+            raise LightError("error", "Litra Glow did not accept the complete command.")
+
+    def read(self, timeout):
+        if not select.select([self.fd], [], [], max(0, timeout))[0]:
+            return None
+        try:
+            data = os.read(self.fd, 64)
+        except BlockingIOError:
+            return None
+        if not data:
+            raise LightError("missing", "Litra Glow disconnected.")
+        return data
+
+
+def report(opcode, payload=b""):
+    return (HEADER + bytes((opcode,)) + payload).ljust(REPORT_SIZE, b"\0")
+
+
+def query(device, key):
+    opcode, _, width, low, high, step = SETTINGS[key]
+    device.write(report(opcode))
+    deadline = time.monotonic() + QUERY_TIMEOUT
+    while (remaining := deadline - time.monotonic()) > 0:
+        data = device.read(remaining)
+        if data is None:
+            break
+        if len(data) != REPORT_SIZE:
+            raise LightError("protocol", "Litra Glow returned an incomplete or unsupported report.")
+        if data[:3] == b"\x11\xff\xff":
+            raise LightError("protocol", "Litra Glow rejected the command.")
+        if data[:4] != HEADER + bytes((opcode,)):
+            continue
+        value = int.from_bytes(data[4:4 + width], "big")
+        if not low <= value <= high or value % step:
+            raise LightError("protocol", f"Litra Glow returned an invalid {key} value.")
+        return bool(value) if key == "power" else value
+    raise LightError("protocol", f"Litra Glow did not answer the {key} query.")
+
+
+def transact(device, setting):
+    if setting is not None:
+        key, value = setting
+        _, opcode, width, _, _, _ = SETTINGS[key]
+        device.write(report(opcode, value.to_bytes(width, "big")))
+    result = {key: query(device, key) for key in SETTINGS}
+    if setting is not None and result[setting[0]] != setting[1]:
+        raise LightError("protocol", "Litra Glow did not confirm the requested setting.")
+    return {"status": "ready", **result}
+
+
+def execute(args):
+    setting = parse_command(args)
+    path = find_device()
+    with device_lock(path):
+        device = Device(path)
+        try:
+            return transact(device, setting)
+        finally:
+            device.close()
+
+
+def main(args=None):
+    try:
+        result = execute(sys.argv[1:] if args is None else args)
+    except LightError as error:
+        result = {"status": error.status, "message": str(error)}
+    except PermissionError:
+        result = {"status": "permission", "message": "Litra Glow access is denied. Run the meeting widget installer and reconnect the light."}
+    except OSError as error:
+        if error.errno in (errno.ENODEV, errno.ENXIO):
+            result = {"status": "missing", "message": "Litra Glow disconnected."}
+        else:
+            result = {"status": "error", "message": "Litra Glow could not be reached. Reconnect the light and try again."}
+    print(json.dumps(result))
+    return 0 if result["status"] == "ready" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
