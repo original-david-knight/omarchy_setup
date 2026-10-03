@@ -39,7 +39,7 @@ not mount the user's home or write a physical disk.
 Build inputs:
 
 - ISO installer source: `omacom/omarchy-iso` commit
-  `2673c613d9a71e23920e43fbb951238145e0f1e8` and its pinned Archiso submodule.
+  `86c07785cb0f63be78edb1349843d5817b5c0e66` and its pinned Archiso submodule.
 - Omarchy and Arch packages: the upstream stable package mirror at build time.
 - Setup scripts: GitHub `main` at first login, refreshed again on retries.
 - Backgrounds: this checkout's `backgrounds/manifest.json` and the image files
@@ -49,6 +49,15 @@ The installer source is pinned; the package mirror and setup repository remain
 rolling. This is not a fully reproducible package snapshot. The output includes
 a SHA-256 checksum and build information recording the installer commit,
 container image ID, and bundled script hashes.
+It also records the local setup commit, whether that checkout has uncommitted
+changes, and GitHub's setup commit. New public and private setup changes must
+reach their GitHub repositories before first login can download them.
+
+The builder refreshes its Arch container image on each run. It maps the old
+`apple-bcm-firmware` name in the stable runtime's offline inventory to the
+mirror's replacement, `apple-bcm-firmware-fetcher`. Hardware acceptance for
+this personal image targets the owner's ASUS and Lenovo laptops; T2 Macs have
+not been tested.
 
 Output goes into `dist/`, which Git ignores. Build trees and package caches
 stay under `~/.cache/omarchy-setup-iso` so later builds can reuse downloads.

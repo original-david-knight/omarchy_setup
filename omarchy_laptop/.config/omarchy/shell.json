@@ -44,6 +44,9 @@
           "id": "david.podcasts"
         },
         {
+          "id": "david.bach"
+        },
+        {
           "id": "david.headset"
         },
         {
@@ -53,6 +56,9 @@
       "right": [
         {
           "id": "omarchy.tray"
+        },
+        {
+          "id": "jankeesvw.meeting-recorder"
         },
         {
           "id": "david.meeting",
@@ -97,6 +103,9 @@
   "plugins": [
     {
       "id": "david.media"
+    },
+    {
+      "id": "david.backgrounds"
     }
   ],
   "version": 1,

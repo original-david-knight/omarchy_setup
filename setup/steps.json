@@ -152,7 +152,23 @@
       "label": "Install the meeting widget and desktop light access",
       "script": "install_meeting.sh",
       "profile_sensitive": true,
-      "inputs": ["install_meeting.sh", "scripts/setup_profile.sh", "omarchy/.config/omarchy/plugins/david.meeting"],
+      "inputs": [
+        "install_meeting.sh",
+        "scripts/setup_profile.sh",
+        "omarchy/.config/omarchy/plugins/david.meeting"
+      ],
+      "requires": [
+        "public.check_baseline",
+        "public.update_omarchy"
+      ]
+    },
+    {
+      "id": "install_meeting_recorder",
+      "label": "Install Meeting Recorder",
+      "script": "install_meeting_recorder.sh",
+      "inputs": [
+        "packaging/meeting-recorder"
+      ],
       "requires": [
         "public.check_baseline",
         "public.update_omarchy"

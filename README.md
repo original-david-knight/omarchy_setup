@@ -79,11 +79,12 @@ private phase, after GitHub authentication and the private checkout handoff.
   dependencies, Ghostty and its font, VPN/Tailscale, voice input,
   calendar tooling, cloud CLIs, compilers and mobile build prerequisites.
 - Browser/editor/terminal applications, VS Code extensions, Listening and its
-  Spotify/mpv/Qt dependencies, .NET, and Asteroids. `packages/agent-tools.json`
+  Spotify/mpv/Qt dependencies, Meeting Recorder, .NET, and Asteroids. `packages/agent-tools.json`
   installs the Omarchy agent CLIs eagerly instead of leaving only first-run
   wrappers. Claude uses its native installer; Codex and the other listed agent
   tools use mise.
-- Hyprland settings and bindings; desktop/laptop bars; all five custom plugins;
+- Hyprland settings and bindings; desktop/laptop bars and their custom plugins,
+  including Bach music controls and the background picker;
   Yazi and its portal/theme hook; terminal/browser/file-manager defaults;
   voice model/configuration; primary-selection bridge; Tailscale,
   Bluetooth, mouse recovery, and boot-forensics services; initial Plymouth art.
@@ -100,7 +101,8 @@ Arch package mirror or a backup of browser sessions, databases, and user files.
 
 ## Profiles and file ownership
 
-Automatic selection uses attached displays: multiple displays select desktop;
+Automatic selection detects laptop hardware first, including when docked.
+Other machines use attached displays: multiple displays select desktop;
 a single display selects laptop. To choose explicitly:
 
 ```sh
@@ -138,6 +140,7 @@ Before committing or publishing, run the [secret checks](docs/security.md).
 ```sh
 ./verify.sh
 python3 scripts/audit_bootstrap.py
+python3 scripts/review_machine.py
 python3 -m unittest discover -s tests -v
 ```
 

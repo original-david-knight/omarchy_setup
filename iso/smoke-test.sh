@@ -19,7 +19,7 @@ for device in virtio-gpu-device virtio-vga; do
     exit 1
   }
 done
-[[ $(git -C "$upstream" rev-parse HEAD) == 2673c613d9a71e23920e43fbb951238145e0f1e8 ]] || {
+[[ $(git -C "$upstream" rev-parse HEAD) == 86c07785cb0f63be78edb1349843d5817b5c0e66 ]] || {
   echo 'The pinned upstream test harness is missing. Run iso/build.sh first.' >&2; exit 1;
 }
 export OMARCHY_INTEGRATION_ISO OMARCHY_INTEGRATION_NO_PREVIEW=true
@@ -29,6 +29,14 @@ OMARCHY_INTEGRATION_ISO=$(realpath -- "$1")
 SCENARIO=personal-setup
 # Reuse the pinned upstream QMP driver, disposable disk layout, and VM cleanup.
 source "$upstream/test/integration.d/base-test.sh"
+# The install splash's dim Return prompt disappears from the default OCR pass.
+ocr_screen() {
+  local shot="$RUN_DIR/.screen.ppm" prepped="$RUN_DIR/.screen.png"
+  screendump "$shot"
+  [[ -s $shot ]] || return 0
+  magick "$shot" -colorspace gray -negate -resize 150% -threshold 85% "$prepped" 2>/dev/null || return 0
+  tesseract "$prepped" - --psm 6 2>/dev/null || true
+}
 # The upstream cleanup stops QEMU but leaves its Unix socket behind.
 trap 'status=$?; cleanup; rm -f -- "$QMP_SOCK"; exit "$status"' EXIT
 exec 8>"$BASE_DIR/personal-setup-test.lock"

@@ -7,6 +7,11 @@ local omarchy_monitor_scale = "auto"
 hl.env("GDK_SCALE", tostring(omarchy_gdk_scale))
 hl.monitor({ output = "", mode = "preferred", position = "auto", scale = omarchy_monitor_scale })
 
+-- Docked laptops keep automatic display geometry and workspace placement.
+if os.execute("omarchy-hw-laptop >/dev/null 2>&1") then
+  return
+end
+
 -- Preserve the pre-Quattro three-monitor layout using stable EDID descriptions.
 hl.monitor({
   output = "desc:LG Electronics LG ULTRAGEAR+ 509RMDZ52650",

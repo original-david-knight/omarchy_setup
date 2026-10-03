@@ -55,3 +55,4 @@ github-cli
 git-filter-repo
 azure-cli
 mpv-mpris
+zenity

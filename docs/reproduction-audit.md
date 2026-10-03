@@ -1,5 +1,21 @@
 # Clean-install reproduction audit — 2026-09-07
 
+The 2026-10-03 review compared this checkout with the running Omarchy 4.0.4
+desktop. `python3 scripts/review_machine.py` repeats the configuration and
+widget inventory check without reading credentials. The review found missing
+Bach and background-picker plugin sources, a meeting-recorder widget without
+an installer, and display-based profile detection that misclassified docked
+laptops. Setup now supplies those widgets and the recorder package, detects
+laptop hardware first, and leaves laptop display/workspace placement automatic.
+The private setup preserves Bach's local source and installs its service.
+
+The current review passes 214 public tests, 39 private tests, all 22 bootstrap
+audit expectations, and 36 public readiness checks. The pinned Meeting Recorder
+package builds; Bach renders audio, passes 18 tests, and installs twice in a
+fresh isolated home. The rebuilt ISO's VM acceptance results are recorded in
+`dist/VALIDATION-2026.10.03.md`. Owner sign-ins and actual laptop suspend,
+camera, microphone, touchpad, Wi-Fi, and reboot checks still require the laptops.
+
 The original public setup did not reproduce this workstation reliably. The
 changes accompanying this audit address the public bootstrap, configuration,
 and orchestration findings below. The remaining acceptance test is a clean

@@ -88,12 +88,16 @@ class BackgroundTests(unittest.TestCase):
         main.write_text('from .context import InstallContext\n' +
                         '        ("Validating boot setup",      validate_boot),\n')
         (build / 'configs/profiledef.sh').write_text('iso_name="omarchy"\n')
+        (build / 'builder').mkdir()
+        builder = build / 'builder/build-iso.sh'
+        builder.write_text("sed 's/^broadcom-wl$/broadcom-wl-dkms/'\n")
         prepare.prepare(build)
         payload = root / 'usr/share/omarchy-setup-iso'
         self.assertEqual(backgrounds.inventory(payload / 'backgrounds'), (self.files, self.selected))
         self.assertEqual((payload / 'install_backgrounds.py').read_bytes(),
                          (ROOT / 'scripts/install_backgrounds.py').read_bytes())
         self.assertIn('stage_personal_setup', main.read_text())
+        self.assertIn('apple-bcm-firmware-fetcher', builder.read_text())
 
 
 if __name__ == '__main__':

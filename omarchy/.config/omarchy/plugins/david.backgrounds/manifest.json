@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "david.backgrounds",
+  "name": "Backgrounds",
+  "version": "1.0.0",
+  "author": "David Knight",
+  "description": "Add, remove, and pick the backgrounds for the current theme.",
+  "kinds": ["overlay"],
+  "entryPoints": {
+    "overlay": "Backgrounds.qml"
+  }
+}

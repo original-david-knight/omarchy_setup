@@ -36,6 +36,13 @@ def prepare(build):
     # Bound compression resources so building does not consume the whole desktop.
     text = text.replace("  '-comp' 'zstd'", "  '-processors' '4' '-mem' '2G'\n  '-comp' 'zstd'")
     profile.write_text(text)
+    # The T2 mirror renamed this package after the stable runtime was published.
+    builder = build / 'builder/build-iso.sh'
+    text = builder.read_text()
+    old = "sed 's/^broadcom-wl$/broadcom-wl-dkms/'"
+    if text.count(old) != 1:
+        raise RuntimeError('Upstream package rename mapping changed; review the build patch')
+    builder.write_text(text.replace(old, "sed -e 's/^broadcom-wl$/broadcom-wl-dkms/' -e 's/^apple-bcm-firmware$/apple-bcm-firmware-fetcher/'"))
 
 
 if __name__ == '__main__':

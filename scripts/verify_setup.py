@@ -49,7 +49,7 @@ def verify(checks, home):
     for filename in ("core.txt", "aur.txt"):
         packages += [line.split("#")[0].strip() for line in (ROOT / "packages" / filename).read_text().splitlines() if line.split("#")[0].strip()]
     checks.command("supplemental packages", ["pacman", "-Q", *packages], "rerun ./install_core.sh")
-    commands = "ghostty google-chrome-stable brave code cursor tmux zellij herdr hunk claude codex gh asteroids dotnet yazi mpv socat spotify voxtype gcalcli vopono tailscale btm wl-copy wtype".split()
+    commands = "ghostty google-chrome-stable brave code cursor tmux zellij herdr hunk claude codex gh asteroids dotnet yazi mpv socat spotify voxtype gcalcli vopono tailscale btm wl-copy wtype omarchy-meeting-recorder zenity".split()
     missing = [command for command in commands if not shutil.which(command)]
     checks.check("core commands", not missing, "missing: " + ", ".join(missing))
     checks.command(".NET SDK", [home / ".dotnet/dotnet", "--list-sdks"])
@@ -59,10 +59,16 @@ def verify(checks, home):
     try:
         config = json.loads(layout.read_text())
         widgets = sum((config["bar"]["layout"].get(side, []) for side in ("left", "center", "right")), [])
+        widgets += config.get("plugins", [])
+        widgets.append({"id": config["bar"].get("id", "")})
+        for screen in config["bar"].get("screenLayouts", []):
+            widgets += sum((screen["layout"].get(side, []) for side in ("left", "center", "right")), [])
         ids = [item["id"] for item in widgets if "id" in item]
         checks.check("tasks bar widget", "david.tasks" in ids and "david.everything" not in ids)
         for plugin in sorted(set(i for i in ids if i.startswith("david."))):
             checks.command(plugin + " plugin", ["omarchy", "plugin", "validate", ROOT / "omarchy/.config/omarchy/plugins" / plugin])
+        if "jankeesvw.meeting-recorder" in ids:
+            checks.command("meeting recorder plugin", ["omarchy", "plugin", "validate", "/usr/share/omarchy-meeting-recorder/plugin"])
     except (OSError, ValueError, KeyError):
         checks.check("bar layout", False, "run ./stow_all.sh")
     for command, expected, label in [(["xdg-mime", "query", "default", "x-scheme-handler/https"], "google-chrome.desktop", "default browser"), (["xdg-mime", "query", "default", "inode/directory"], "yazi.desktop", "default file manager")]:

@@ -32,8 +32,9 @@ setup_profile() {
   local profile=${OMARCHY_SETUP_PROFILE:-auto} monitor_count
   case $profile in
     auto)
-      monitor_count=$(get_monitor_count)
-      if ((monitor_count > 1)); then
+      if command -v omarchy-hw-laptop >/dev/null 2>&1 && omarchy-hw-laptop; then
+        profile=laptop
+      elif monitor_count=$(get_monitor_count) && ((monitor_count > 1)); then
         profile=desktop
       else
         profile=laptop

@@ -803,7 +803,7 @@ def main():
         ui.say("\nOMARCHY SETUP\n\nUpdate Omarchy → complete public setup → GitHub/private setup → final sign-ins and opening checks.\nFailed installs are reported at the end; independent steps continue. Completed scripts are saved.\nCtrl+C pauses setup; run ./setup.sh to resume. Logs are private; password keystrokes are not recorded.")
         profile = args.profile or os.environ.get("OMARCHY_SETUP_PROFILE") or state.data.get("profile")
         if profile not in ("auto", "desktop", "laptop"):
-            choice = ui.choose("Choose your desktop profile.", {"a": "Automatic — use connected displays", "d": "Desktop", "l": "Laptop"}, "a")
+            choice = ui.choose("Choose your desktop profile.", {"a": "Automatic — detect laptop, then connected displays", "d": "Desktop", "l": "Laptop"}, "a")
             profile = {"a": "auto", "d": "desktop", "l": "laptop"}[choice]
         state.data["profile"] = profile
         state.save()

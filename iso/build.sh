@@ -4,7 +4,7 @@ set -euo pipefail
 repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
 cache_dir=${OMARCHY_ISO_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/omarchy-setup-iso}
 output_dir=${OMARCHY_ISO_OUTPUT_DIR:-$repo_dir/dist}
-upstream_commit=2673c613d9a71e23920e43fbb951238145e0f1e8
+upstream_commit=86c07785cb0f63be78edb1349843d5817b5c0e66
 upstream_url=https://github.com/omacom/omarchy-iso.git
 builder_image=archlinux/archlinux:latest
 
@@ -24,7 +24,7 @@ HELP
 fi
 [[ $# == 0 ]] || { echo 'Use iso/build.sh --help for usage.' >&2; exit 2; }
 [[ $(uname -m) == x86_64 ]] || { echo 'This ISO builder requires x86_64.' >&2; exit 1; }
-for command in docker git python3 tar sha256sum; do
+for command in docker git python3 tar sha256sum flock; do
   command -v "$command" >/dev/null || { printf 'Missing build command: %s\n' "$command" >&2; exit 1; }
 done
 python3 "$repo_dir/scripts/install_backgrounds.py" --check
@@ -60,6 +60,8 @@ git -C "$upstream/archiso" archive HEAD | tar -x -C "$build_dir/archiso"
 python3 "$repo_dir/iso/prepare.py" "$build_dir"
 printf 'Build tree: %s\n' "$build_dir"
 
+"${docker_command[@]}" pull "$builder_image"
+
 "${docker_command[@]}" run --rm --privileged \
   --name "omarchy-setup-iso-$(basename "$build_dir")" \
   -e OMARCHY_ISO_REF=quattro -e OMARCHY_MIRROR=stable \
@@ -84,6 +86,9 @@ mv -- "${images[0]}" "$output_dir/$image_name"
   printf 'archiso_commit=%s\n' "$(git -C "$upstream/archiso" rev-parse HEAD)"
   printf 'builder_image=%s\n' "$("${docker_command[@]}" image inspect "$builder_image" --format '{{.Id}}')"
   printf 'setup_source=https://github.com/original-david-knight/omarchy_setup.git\nsetup_branch=main\n'
+  printf 'reviewed_setup_commit=%s\n' "$(git -C "$repo_dir" rev-parse HEAD)"
+  printf 'published_setup_commit=%s\n' "$(git ls-remote https://github.com/original-david-knight/omarchy_setup.git refs/heads/main | cut -f1)"
+  printf 'reviewed_setup_dirty=%s\n' "$(if [[ -n $(git -C "$repo_dir" status --porcelain) ]]; then echo yes; else echo no; fi)"
   printf 'built_at=%s\n' "$(date -u +%FT%TZ)"
   sha256sum "$repo_dir/bootstrap.sh" "$repo_dir/iso/omarchy-personal-setup" "$repo_dir/iso/post-boot.hook" "$repo_dir/iso/personal_setup.py"
   sha256sum "$repo_dir/scripts/install_backgrounds.py" "$repo_dir/backgrounds/manifest.json"

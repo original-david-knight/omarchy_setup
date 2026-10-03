@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "david.bach",
+  "name": "Bach garden",
+  "version": "1.0.0",
+  "author": "David Knight",
+  "description": "Control locally composed ambient music, nature sounds, volume, and a sleep timer.",
+  "kinds": ["bar-widget"],
+  "activation": "on-demand",
+  "entryPoints": {"barWidget": "Panel.qml"},
+  "barWidget": {
+    "displayName": "Bach garden",
+    "description": "Ambient music playback and composition controls.",
+    "category": "Media",
+    "aliases": ["bach", "ambient", "counterpoint"],
+    "allowMultiple": false,
+    "defaultSection": "left"
+  }
+}

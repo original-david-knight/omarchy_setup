@@ -1,0 +1,146 @@
+#!/bin/bash
+
+# Helper for the Backgrounds overlay: list, add, remove, and set the current
+# theme's backgrounds. Only the user folder
+# (~/.config/omarchy/backgrounds/<theme>) is ever written to; backgrounds
+# that ship with the theme are listed read-only.
+
+set -uo pipefail
+
+state="$HOME/.local/state/omarchy/current"
+theme=$(cat "$state/theme.name" 2>/dev/null)
+user_dir="$HOME/.config/omarchy/backgrounds/$theme"
+theme_dir="$state/theme/backgrounds"
+current_link="$state/background"
+lister="${OMARCHY_PATH:-$HOME/.local/share/omarchy}/shell/plugins/image-picker/list.sh"
+
+fail() {
+  echo "$*" >&2
+  exit 1
+}
+
+[[ -n $theme ]] || fail "No current theme"
+
+list_images() {
+  find -L "$@" -maxdepth 1 -type f \
+    \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.gif' -o -iname '*.bmp' -o -iname '*.webp' \) \
+    -print0 2>/dev/null | sort -z
+}
+
+# Prints a header line, then one row per image:
+#   theme <tab> <theme name> <tab> <current background path>
+#   user|theme <tab> <image path> <tab> <thumbnail path>
+# Thumbnails come from the stock image picker's cache when available.
+cmd_list() {
+  local kind dir image thumbnail
+  printf 'theme\t%s\t%s\n' "$(omarchy-theme-current 2>/dev/null || echo "$theme")" "$(readlink -f "$current_link" 2>/dev/null)"
+
+  for kind in user theme; do
+    [[ $kind == user ]] && dir=$user_dir || dir=$theme_dir
+    [[ -d $dir ]] || continue
+
+    if [[ -x $lister ]]; then
+      while IFS=$'\t' read -r image thumbnail; do
+        [[ -n $image ]] && printf '%s\t%s\t%s\n' "$kind" "$image" "${thumbnail:-$image}"
+      done < <("$lister" "$dir")
+    else
+      while IFS= read -r -d '' image; do
+        printf '%s\t%s\t%s\n' "$kind" "$image" "$image"
+      done < <(list_images "$dir")
+    fi
+  done
+}
+
+# Copy (never move) a file into the user folder, keeping its name unless that
+# name is taken by a different image.
+import_file() {
+  local source="$1" name stem ext dest n=1
+
+  source=$(realpath -- "$source") || return 1
+  [[ -f $source ]] || return 1
+  [[ $(dirname -- "$source") == "$(realpath -- "$user_dir")" ]] && return 0
+
+  name=$(basename -- "$source")
+  dest="$user_dir/$name"
+
+  if [[ -e $dest ]]; then
+    cmp -s -- "$source" "$dest" && return 0
+
+    stem="${name%.*}"
+    ext="${name##*.}"
+    [[ $stem == "$name" ]] && ext="" || ext=".$ext"
+    while [[ -e $user_dir/$stem-$n$ext ]]; do (( n++ )); done
+    dest="$user_dir/$stem-$n$ext"
+  fi
+
+  cp -- "$source" "$dest" && printf '%s\n' "$dest"
+}
+
+# With paths: import them. Without: open a file chooser first.
+cmd_add() {
+  local files=() file start="$HOME/Pictures/"
+
+  mkdir -p "$user_dir"
+
+  if (( $# > 0 )); then
+    files=("$@")
+  else
+    [[ -d $start ]] || start="$HOME/"
+    mapfile -t files < <(
+      zenity --file-selection --multiple --separator=$'\n' \
+        --title="Add backgrounds to $(omarchy-theme-current 2>/dev/null || echo "$theme")" \
+        --filename="$start" \
+        --file-filter="Images | *.jpg *.jpeg *.png *.gif *.bmp *.webp *.JPG *.JPEG *.PNG *.GIF *.BMP *.WEBP" \
+        2>/dev/null
+    )
+  fi
+
+  for file in "${files[@]}"; do
+    [[ -n $file ]] && import_file "$file"
+  done
+  return 0
+}
+
+# Move a user background to the trash. If it is the current background,
+# switch to another one first so the background link never dangles.
+cmd_remove() {
+  local target current other image
+
+  [[ -n ${1:-} ]] || fail "Usage: backgrounds remove <path>"
+  target=$(realpath -- "$1") || fail "File does not exist: $1"
+  [[ -f $target ]] || fail "File does not exist: $1"
+  [[ $(dirname -- "$target") == "$(realpath -- "$user_dir")" ]] || fail "Only your own backgrounds can be removed"
+
+  current=$(readlink -f "$current_link" 2>/dev/null)
+  if [[ $current == "$target" ]]; then
+    other=""
+    while IFS= read -r -d '' image; do
+      [[ $(realpath -- "$image") != "$target" ]] && { other="$image"; break; }
+    done < <(list_images "$user_dir" "$theme_dir")
+    [[ -n $other ]] || fail "Can't remove the theme's last background"
+    omarchy-theme-bg-set "$other"
+  fi
+
+  gio trash -- "$target" || fail "Couldn't move $target to the trash"
+}
+
+cmd_set() {
+  [[ -n ${1:-} ]] || fail "Usage: backgrounds set <path>"
+  omarchy-theme-bg-set "$1"
+}
+
+cmd_folder() {
+  omarchy-theme-bg-install
+}
+
+command="${1:-}"
+shift || true
+
+case "$command" in
+  list) cmd_list ;;
+  add) cmd_add "$@" ;;
+  remove) cmd_remove "$@" ;;
+  set) cmd_set "$@" ;;
+  folder) cmd_folder ;;
+  *) fail "Usage: backgrounds list|add [path...]|remove <path>|set <path>|folder" ;;
+esac

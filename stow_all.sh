@@ -126,7 +126,7 @@ validate_bar_setup() {
         | (.id // "")),
       (.bar.id // "")
     ][]
-    | select(startswith("david."))
+    | select(startswith("david.") or . == "jankeesvw.meeting-recorder")
   ' "$shell_config" | sort -u)
 
   for plugin_id in "${plugin_ids[@]}"; do
@@ -136,10 +136,9 @@ validate_bar_setup() {
       echo "Shell plugin $plugin_id has no deployed plugin manifest at $plugin_dir" >&2
       return 1
     }
-    [[ -d $source_plugin_dir ]] || {
-      echo "Shell plugin $plugin_id has no source plugin at $source_plugin_dir" >&2
-      return 1
-    }
+    if [[ ! -d $source_plugin_dir && $plugin_id == jankeesvw.meeting-recorder ]]; then
+      source_plugin_dir=/usr/share/omarchy-meeting-recorder/plugin
+    fi
     # Stow deliberately deploys symlinks, while the plugin validator rejects
     # symlinks inside its input folder. Validate the authoritative source copy.
     omarchy plugin validate "$source_plugin_dir" >/dev/null
@@ -258,6 +257,15 @@ fi
 for package in "${shared_packages[@]}"; do
   stow_package "$package"
 done
+
+recorder_plugin=/usr/share/omarchy-meeting-recorder/plugin
+if [[ -d $recorder_plugin ]]; then
+  recorder_target="$target_home/.config/omarchy/plugins/jankeesvw.meeting-recorder"
+  if [[ -e $recorder_target || -L $recorder_target ]] && [[ $(realpath -m -- "$recorder_target") != "$recorder_plugin" ]]; then
+    backup_target ".config/omarchy/plugins/jankeesvw.meeting-recorder"
+  fi
+  ln -sfn -- "$recorder_plugin" "$recorder_target"
+fi
 
 if [[ $profile == desktop ]]; then
   if (( ! bar_only )); then stow_package ghostty_big_screen; fi
