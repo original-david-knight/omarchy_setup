@@ -133,6 +133,66 @@ A normal run enables and starts installed services in the graphical session,
 validates Hyprland, and applies the boot art. `./activate.sh` can finish this
 after logging in. Identical art does not trigger another initramfs rebuild.
 
+## Windows keyboard shortcuts
+
+The optional Windows companion maps Omarchy muscle memory onto Windows 11
+virtual desktops and applications. From this checkout in 64-bit PowerShell:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\windows\install.ps1
+```
+
+This installs pinned, checksum-verified AutoHotkey v2 and
+[VirtualDesktopAccessor](https://github.com/Ciantic/VirtualDesktopAccessor)
+into `%LOCALAPPDATA%\OmarchyShortcuts`, starts the mappings, and adds a shortcut
+to your account's Startup folder. It needs x64 Windows 11 24H2 or newer, with
+no administrator access. The installer checks the desktop API before replacing
+an existing installation. Windows updates can change that API; the desktop
+helper may need updating after an OS upgrade. The Linux setup does not run this
+installer.
+
+| Shortcut | Windows behavior |
+| --- | --- |
+| `Win+1` through `Win+9`, `Win+0` | Switch to desktop 1 through 10; create missing desktops |
+| `Win+Shift+number` | Move the active window to that desktop and follow it |
+| `Win+Alt+Shift+number` | Move the active window without following |
+| `Win+Tab`, `Win+Shift+Tab` | Cycle existing desktops forward or backward |
+| `Win+Ctrl+Tab` | Return to the former desktop |
+| `Win+arrows` | Focus a nearby window in that direction |
+| `Win+Enter`, `Win+E` | Windows Terminal (PowerShell fallback), File Explorer |
+| `Win+B`, `Win+Shift+B` | Chrome Default or Profile 1 in a new window |
+| `Win+D`, `Win+I` | Discord, VS Code |
+| `Win+S` | Show or minimize Slack and Obsidian |
+| `Win+M`, `Win+Shift+M` | YouTube Music website, Spotify app |
+| `Win+Space` | Windows Start menu |
+| `Win+W` | Close the active application window |
+| `Win+F`, `Win+Shift+F` | Send F11 for applications that support fullscreen |
+| `Win+Alt+F` | Maximize or restore the active window |
+| `Win+Shift+T` | Task Manager |
+| `Ctrl+Shift+S`, `Ctrl+Shift+W` | Region screenshot, active-window screenshot to clipboard |
+| `Ctrl+Shift+J`, `Ctrl+Shift+K`, `Win+Backslash` | Volume down, volume up, play/pause |
+| `Win+K` | Show the shortcut reference |
+| `Win+Ctrl+Alt+F12` | Suspend or resume the mappings |
+
+These mappings replace the corresponding native Windows shortcuts, including
+taskbar app launching on `Win+number` and Task View on `Win+Tab`. App launchers
+expect the apps to be installed separately; the script does not install apps
+or copy browser profiles. Slack/Obsidian uses normal Windows windows, and
+directional focus uses window positions rather than a tiling layout.
+`Win+A/J/P/T/O` show an unmapped-action notice instead of their Windows action.
+Other unlisted shortcuts keep their Windows behavior. In particular,
+[`Win+L` and `Ctrl+Alt+Delete` remain reserved by Windows](https://learn.microsoft.com/en-us/windows/powertoys/keyboard-manager).
+Mappings do not control elevated applications when the script runs normally.
+
+Edit `windows/omarchy.ahk` and rerun the installer to apply changes. Use
+`-NoStartup` for session-only installation or `-NoStart` to install without
+starting the process. Exit using the tray icon to restore native shortcuts.
+To stop it and remove login startup, retaining the installed files:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\windows\uninstall.ps1
+```
+
 ## Verification
 
 Before committing or publishing, run the [secret checks](docs/security.md).
