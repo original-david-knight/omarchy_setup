@@ -21,6 +21,27 @@ Panel {
   property string recorderWatchError: ""
   property string pendingRecorderAction: ""
   property string cursorRow: "recorder"
+  // fake_me AI stand-in (~/workspace/fake_me), controlled through its `fakeme` CLI
+  readonly property string fakemeCommand: String(setting("fakeme", "/home/david/workspace/fake_me/scripts/fakeme"))
+  property var avatarData: ({ state: "unknown" })
+  property string avatarError: ""
+  readonly property string avatarState: avatarData.state
+  readonly property bool avatarOn: /^(starting|listening|thinking|speaking)$/.test(avatarState)
+  readonly property bool avatarReady: /^(listening|thinking|speaking)$/.test(avatarState)
+  readonly property bool avatarMuted: avatarData.auto === false
+  readonly property var briefingInfo: avatarData.briefing || ({})
+  readonly property string briefingLabel: briefingInfo.running ? "Briefing: refreshing (about 20 s)..."
+    : briefingInfo.error ? "Briefing refresh failed: " + briefingInfo.error
+    : briefingInfo.updated ? "Briefing updated " + (briefingInfo.updated.slice(0, 10) === localDate(nowMs)
+        ? briefingInfo.updated.slice(11, 16) : Qt.formatDateTime(new Date(briefingInfo.updated), "MMM d HH:mm"))
+    : "No briefing yet"
+  readonly property bool avatarNeedsCamera: avatarData.camera === false && !avatarOn
+  readonly property string avatarLabel: avatarNeedsCamera ? "Needs its camera (FakeMe-Cam) — one-time setup"
+    : avatarState === "off" ? "Off"
+    : avatarState === "starting" ? "Starting (about 15 s)..."
+    : avatarState === "listening" ? (avatarMuted ? "Listening · muted, won't answer" : "Listening")
+    : avatarState === "thinking" ? "Thinking..."
+    : avatarState === "speaking" ? "Speaking" : "Unavailable"
   property real nowMs: Date.now()
 
   readonly property bool calendarCurrent: calendarData.status === "ready" && calendarData.date === localDate(nowMs)
@@ -130,18 +151,35 @@ Panel {
     recorderCommand.running = true
     actionTimeout.restart()
   }
+  function avatar(args) {
+    if (avatarCommand.running) return
+    avatarError = ""
+    avatarCommand.command = [fakemeCommand].concat(args)
+    avatarCommand.running = true
+  }
+  function sendLine(kind) {
+    var line = avatarLine.text.trim()
+    if (line === "" || !avatarReady) return
+    avatar([kind, line])
+    avatarLine.text = ""
+  }
+  function toggleAvatar() {
+    if (avatarNeedsCamera) avatar(["setup-camera"])
+    else if (avatarState !== "starting") avatar([avatarOn ? "stop" : "start"])
+  }
   function activateRow() {
     if (cursorRow === "recorder") {
       if (pendingRecorderAction !== "") return
       if (canStart) recorderAction("start")
       else openRecorder()
-    } else if (cursorRow === "light") toggleLight()
+    } else if (cursorRow === "avatar") toggleAvatar()
+    else if (cursorRow === "light") toggleLight()
     else if (cursorRow === "refresh") refresh()
   }
   function moveCursor(dx, dy) {
-    var rows = litraEnabled ? ["recorder", "light", "brightness", "temperature", "refresh"] : ["recorder", "refresh"]
+    var rows = litraEnabled ? ["recorder", "avatar", "light", "brightness", "temperature", "refresh"] : ["recorder", "avatar", "refresh"]
     if (dy !== 0) cursorRow = rows[(rows.indexOf(cursorRow) + dy + rows.length) % rows.length]
-    var targets = { recorder: recorderSection, light: lightSection, brightness: brightness, temperature: temperature, refresh: refreshButton }
+    var targets = { recorder: recorderSection, avatar: avatarSection, light: lightSection, brightness: brightness, temperature: temperature, refresh: refreshButton }
     var target = targets[cursorRow]
     var top = target.mapToItem(content, 0, 0).y
     if (top < scroll.contentY) scroll.contentY = top
@@ -211,6 +249,25 @@ Panel {
     }
   }
   Process {
+    id: avatarWatch
+    command: [root.fakemeCommand, "watch"]
+    running: true
+    stdout: SplitParser {
+      onRead: function(line) {
+        try { root.avatarData = JSON.parse(line) } catch (error) { root.avatarData = { state: "unknown" } }
+      }
+    }
+    onExited: root.avatarData = { state: "unknown" }
+  }
+  Timer { interval: 5000; running: !avatarWatch.running; repeat: true; onTriggered: avatarWatch.running = true }
+  Process {
+    id: avatarCommand
+    stderr: StdioCollector { id: avatarCommandError }
+    onExited: function(exitCode) {
+      if (exitCode !== 0) root.avatarError = avatarCommandError.text.trim() || "fakeme did not accept the command"
+    }
+  }
+  Process {
     id: recorderCommand
     onExited: function(exitCode) {
       if (exitCode !== 0) {
@@ -225,10 +282,10 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: (root.recording ? "󰑋" : "󰃰") + ((root.bar && root.bar.vertical) ? "" : "  " + root.barLabel)
+    text: (root.avatarOn ? "󰚩 " : "") + (root.recording ? "󰑋" : "󰃰") + ((root.bar && root.bar.vertical) ? "" : "  " + root.barLabel)
     active: root.recording
     tooltipText: root.calendarMessage + (root.nextMeeting ? "\n" + root.meetingTime : "")
-      + "\n" + root.recordingLabel + "\nClick to open meeting controls"
+      + "\n" + root.recordingLabel + "\nAI stand-in: " + root.avatarLabel + "\nClick to open meeting controls"
     onPressed: root.toggle()
   }
 
@@ -254,6 +311,12 @@ Panel {
         else if (text === "o") root.openRecorder()
         else if (text === "p") root.recorderAction(root.recorderState === "paused" ? "resume" : "pause")
         else if (text === "s") root.recorderAction("stop")
+        else if (text === "a") root.toggleAvatar()
+        else if (text === "h" && root.avatarReady) root.avatar(["hello"])
+        else if (text === "m" && root.avatarReady) root.avatar([root.avatarMuted ? "unmute" : "mute"])
+        else if (text === "b") root.avatar(["briefing"])
+        else if (text === "l") root.avatar(["log"])
+        else if (text === "t" && root.avatarReady) avatarLine.forceActiveFocus()
       }
       Flickable {
         id: scroll
@@ -348,6 +411,144 @@ Panel {
             color: Color.urgent
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
+          }
+          PanelSeparator { foreground: root.foreground }
+          PanelSectionHeader { id: avatarSection; text: "AI STAND-IN"; foreground: root.foreground }
+          Text {
+            width: parent.width
+            text: root.avatarLabel
+            textFormat: Text.PlainText
+            wrapMode: Text.Wrap
+            color: root.avatarState === "speaking" ? Color.accent : root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+          }
+          Text {
+            width: parent.width
+            visible: root.avatarReady && (root.avatarData.heard || root.avatarData.said)
+            text: (root.avatarData.heard ? "Heard: " + root.avatarData.heard : "")
+              + (root.avatarData.heard && root.avatarData.said ? "\n" : "")
+              + (root.avatarData.said ? "Said: " + root.avatarData.said : "")
+            textFormat: Text.PlainText
+            wrapMode: Text.Wrap
+            maximumLineCount: 4
+            elide: Text.ElideRight
+            color: Color.muted
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+          Flow {
+            width: parent.width
+            spacing: Style.space(8)
+            Button {
+              objectName: "avatarPower"
+              text: root.avatarNeedsCamera ? "Create camera" : root.avatarOn ? "Stop stand-in" : "Start stand-in"
+              bordered: true
+              hasCursor: root.cursorRow === "avatar"
+              selected: root.avatarOn
+              enabled: !avatarCommand.running && root.avatarState !== "starting" && root.avatarState !== "unknown"
+              onClicked: root.toggleAvatar()
+            }
+            Button {
+              objectName: "avatarHello"
+              text: "Say hello"
+              visible: root.avatarReady
+              enabled: !avatarCommand.running
+              bordered: true
+              onClicked: root.avatar(["hello"])
+            }
+            Button {
+              objectName: "avatarMute"
+              text: root.avatarMuted ? "Unmute" : "Mute"
+              visible: root.avatarReady
+              enabled: !avatarCommand.running
+              bordered: true
+              selected: root.avatarMuted
+              onClicked: root.avatar([root.avatarMuted ? "unmute" : "mute"])
+            }
+            Button {
+              objectName: "avatarHush"
+              text: "Hush"
+              visible: root.avatarState === "speaking"
+              enabled: !avatarCommand.running
+              bordered: true
+              onClicked: root.avatar(["hush"])
+            }
+          }
+          Text {
+            width: parent.width
+            visible: text !== ""
+            text: root.avatarError || (root.avatarState === "off" && !root.avatarNeedsCamera ? String(root.avatarData.message || "") : "")
+            textFormat: Text.PlainText
+            wrapMode: Text.Wrap
+            color: Color.urgent
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+          Column {
+            width: parent.width
+            spacing: Style.space(8)
+            visible: root.avatarReady
+            TextField {
+              id: avatarLine
+              width: parent.width
+              foreground: root.foreground
+              placeholderText: "Type a line for it to say..."
+              onAccepted: root.sendLine("say")
+              Keys.onEscapePressed: keyCatcher.forceActiveFocus()
+            }
+            Flow {
+              width: parent.width
+              spacing: Style.space(8)
+              Button {
+                objectName: "avatarSay"
+                text: "Say it"
+                bordered: true
+                enabled: avatarLine.text.trim() !== "" && !avatarCommand.running
+                onClicked: root.sendLine("say")
+              }
+              Button {
+                objectName: "avatarAsk"
+                text: "Answer it"
+                bordered: true
+                enabled: avatarLine.text.trim() !== "" && !avatarCommand.running
+                onClicked: root.sendLine("ask")
+              }
+            }
+          }
+          Text {
+            width: parent.width
+            text: root.briefingLabel
+            textFormat: Text.PlainText
+            wrapMode: Text.Wrap
+            color: root.briefingInfo.error ? Color.urgent : Color.muted
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+          Flow {
+            width: parent.width
+            spacing: Style.space(8)
+            Button {
+              objectName: "briefingRefresh"
+              text: "Refresh briefing"
+              bordered: true
+              enabled: !root.briefingInfo.running && !avatarCommand.running
+              onClicked: root.avatar(["briefing"])
+            }
+            Button {
+              objectName: "briefingReview"
+              text: "Review briefing"
+              bordered: true
+              enabled: !avatarCommand.running
+              onClicked: root.avatar(["review"])
+            }
+            Button {
+              objectName: "avatarLog"
+              text: "Live log"
+              bordered: true
+              enabled: !avatarCommand.running
+              onClicked: root.avatar(["log"])
+            }
           }
           PanelSeparator { visible: root.litraEnabled; foreground: root.foreground }
           Row {
@@ -447,7 +648,7 @@ Panel {
           }
           Text {
             width: parent.width
-            text: "Arrows adjust · Enter selects\nP pause/resume · S stop · O open recorder"
+            text: "Arrows adjust · Enter selects\nP pause/resume · S stop · O open recorder\nA start/stop stand-in · H say hello · M mute/unmute\nT type a line · B refresh briefing · L live log"
             textFormat: Text.PlainText
             wrapMode: Text.Wrap
             color: Color.muted
