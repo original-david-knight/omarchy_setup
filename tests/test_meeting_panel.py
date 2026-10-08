@@ -5,6 +5,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 
 
@@ -63,6 +64,11 @@ with open(os.environ['MEETING_COMMAND_LOG'], 'a') as log:
 """
 
 
+OPENER = """#!/bin/sh
+printf '%s\\n' "$*" >> "$MEETING_OPENER_LOG"
+"""
+
+
 class MeetingPanelTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("quickshell") and SHELL.is_dir(), "requires installed Omarchy Shell")
     def test_panel_actions_and_source_driven_states(self):
@@ -94,6 +100,11 @@ class MeetingPanelTests(unittest.TestCase):
             recorder = binary / "omarchy-meeting-recorder"
             recorder.write_text(RECORDER)
             recorder.chmod(0o755)
+            opener = binary / "open-work-url"
+            opener.write_text(OPENER)
+            opener.chmod(0o755)
+            opener_log = workspace / "opened.log"
+            opener_log.write_text("")
             shutil.copy2(Path(__file__).with_name("meeting-panel.qml"), workspace / "shell.qml")
             light_state = workspace / "light.json"
             light_state.write_text('{"status":"ready","power":false,"brightness":120,"temperature":4200}')
@@ -113,6 +124,7 @@ class MeetingPanelTests(unittest.TestCase):
                 "MEETING_LIGHT_STATE": str(light_state),
                 "MEETING_COMMAND_LOG": str(command_log),
                 "MEETING_LIGHT_POLL_LOG": str(poll_log),
+                "MEETING_TEST_OPENER": str(opener), "MEETING_OPENER_LOG": str(opener_log),
                 "MEETING_TEST_LAPTOP": "1" if laptop else ""}
             env.pop("DISPLAY", None)
             env.pop("WAYLAND_DISPLAY", None)
@@ -127,7 +139,18 @@ class MeetingPanelTests(unittest.TestCase):
             if laptop:
                 self.assertEqual(poll_log.read_text(), "")
                 self.assertEqual(command_log.read_text(), "")
+                self.assertEqual(opener_log.read_text(), "")
                 return
+            # The opener runs detached, so wait for all three launches in any order.
+            deadline = time.monotonic() + 3
+            while len(opener_log.read_text().splitlines()) < 3 and time.monotonic() < deadline:
+                time.sleep(0.02)
+            opened = sorted(opener_log.read_text().splitlines())
+            self.assertEqual(len(opened), 3, opened)
+            self.assertEqual(opened[0][:len("https://calendar.google.com/calendar/r/day/")],
+                             "https://calendar.google.com/calendar/r/day/")
+            self.assertEqual(opened[1:], ["https://meet.google.com/abc-defg-hij",
+                                          "https://www.google.com/calendar/event?eid=Y3VycmVudA"])
             preview = os.environ.get("MEETING_PREVIEW_PATH")
             if preview:
                 self.assertIn("MEETING PANEL PREVIEW SAVED", output, output)

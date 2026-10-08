@@ -98,6 +98,41 @@ class ChromeProfileTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertFalse(ledger.exists())
 
+    def test_work_link_opens_meet_and_calendar_in_the_configured_profile(self):
+        config = self.home / '.config/omarchy/work-widgets.env'
+        config.parent.mkdir(parents=True)
+        config.write_text('WORK_CHROME_PROFILE="Profile 1"\n'
+                          'WORK_GITHUB_ORIGIN=https://github.example.invalid\nWORK_JIRA_ORIGIN=https://jira.example.invalid\n')
+        config.chmod(0o600)
+        commands = self.home / 'commands'
+        commands.mkdir()
+        ledger = self.home / 'launch'
+        stub = commands / 'google-chrome-stable'
+        stub.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$CHROME_TEST_LEDGER"\n')
+        stub.chmod(0o755)
+        env = dict(os.environ, HOME=str(self.home), WORK_WIDGETS_CONFIG=str(config),
+                   CHROME_TEST_LEDGER=str(ledger), PATH=str(commands) + ':/usr/bin:/bin')
+        for url in ('https://meet.google.com/abc-defg-hij',
+                    'https://www.google.com/calendar/event?eid=ZXZlbnQ',
+                    'https://calendar.google.com/calendar/r/day/2026/10/8'):
+            with self.subTest(url=url):
+                result = subprocess.run([str(ROOT / 'bin/bin/open-work-url'), url], env=env,
+                                        capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                deadline = time.monotonic() + 3
+                while not ledger.exists():
+                    self.assertLess(time.monotonic(), deadline)
+                    time.sleep(0.01)
+                self.assertEqual(ledger.read_text().splitlines(), ['--profile-directory=Profile 1', '--new-tab', url])
+                ledger.unlink()
+        for url in ('https://meet.google.com.example.invalid/abc', 'https://www.google.com/search?q=calendar',
+                    'http://meet.google.com/abc-defg-hij'):
+            with self.subTest(url=url):
+                result = subprocess.run([str(ROOT / 'bin/bin/open-work-url'), url], env=env,
+                                        capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, 2)
+                self.assertFalse(ledger.exists())
+
 
 if __name__ == '__main__':
     unittest.main()

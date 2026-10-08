@@ -12,6 +12,7 @@ import sys
 import tempfile
 import unittest
 import urllib.error
+import urllib.parse
 from unittest.mock import patch
 
 
@@ -45,9 +46,16 @@ class FakeResponse:
         return self.body
 
 
+WORK_CALENDARS = {"calendars": [
+    {"account": "work", "calendar_id": "work@example.test", "enabled": True},
+    {"account": "work", "calendar_id": "hidden@example.test", "enabled": False},
+    {"account": "personal", "calendar_id": "work@example.test", "enabled": True},
+    {"account": "personal", "calendar_id": "home@example.test", "enabled": True}]}
+
+
 class FakeOpener:
-    def __init__(self, body=None, error=None):
-        self.body = body
+    def __init__(self, bodies=None, error=None):
+        self.bodies = bodies or {}
         self.error = error
         self.requests = []
 
@@ -55,12 +63,12 @@ class FakeOpener:
         self.requests.append((request, timeout))
         if self.error:
             raise self.error
-        return FakeResponse(json.dumps(self.body).encode())
+        return FakeResponse(json.dumps(self.bodies[urllib.parse.urlsplit(request.full_url).path]).encode())
 
 
 class CalendarCliTests(unittest.TestCase):
-    def run_calendar(self, body=None, error=None, config=None):
-        opener = FakeOpener(body, error)
+    def run_calendar(self, body=None, error=None, config=None, calendars=WORK_CALENDARS):
+        opener = FakeOpener({"/api/today": body, "/api/today/calendars": calendars}, error)
         with tempfile.TemporaryDirectory() as folder:
             Path(folder, "config.json").write_text(json.dumps(config or {
                 "service_url": "https://calendar.example.test/", "token": "fixture-secret"}))
@@ -77,7 +85,7 @@ class CalendarCliTests(unittest.TestCase):
         body.update(changes)
         return body
 
-    def test_returns_all_eligible_events_including_ended_and_uses_only_today_route(self):
+    def test_returns_all_eligible_events_including_ended_and_uses_only_today_routes(self):
         rows = [event("later", starts_at="2026-10-02T16:00:00-07:00", ends_at="2026-10-02T16:30:00-07:00"),
                 event("ended"), event("personal", account="personal"),
                 event("all-day", all_day=True), event("declined", declined=True),
@@ -87,14 +95,49 @@ class CalendarCliTests(unittest.TestCase):
         self.assertEqual(result, {"status": "ready", "date": self.today([])["date"],
             "events": [
                 {"id": "ended", "title": "Work review", "starts_at": "2026-10-02T09:00:00-07:00",
-                 "ends_at": "2026-10-02T09:30:00-07:00", "calendar_name": "Work", "location": "Room 2"},
+                 "ends_at": "2026-10-02T09:30:00-07:00", "calendar_name": "Work", "location": "Room 2",
+                 "meet_url": "", "html_link": ""},
                 {"id": "later", "title": "Work review", "starts_at": "2026-10-02T16:00:00-07:00",
-                 "ends_at": "2026-10-02T16:30:00-07:00", "calendar_name": "Work", "location": "Room 2"}],
+                 "ends_at": "2026-10-02T16:30:00-07:00", "calendar_name": "Work", "location": "Room 2",
+                 "meet_url": "", "html_link": ""}],
             "last_sync": "9:15 AM", "warning": ""})
-        self.assertEqual(len(requests), 1)
-        self.assertEqual(requests[0][0].full_url, "https://calendar.example.test/api/today")
-        self.assertEqual(requests[0][0].get_header("Authorization"), "Bearer fixture-secret")
-        self.assertEqual(requests[0][1], 20)
+        self.assertEqual([request.full_url for request, _ in requests],
+                         ["https://calendar.example.test/api/today", "https://calendar.example.test/api/today/calendars"])
+        for request, timeout in requests:
+            self.assertEqual(request.get_header("Authorization"), "Bearer fixture-secret")
+            self.assertEqual(timeout, 20)
+
+    def test_work_calendar_shared_with_personal_account_still_counts_as_work(self):
+        # The feed keeps one copy of an event both accounts can see, preferring
+        # the personal account's, so a work meeting can arrive labeled personal.
+        rows = [event("shared", account="personal", calendar_id="work@example.test"),
+                event("home", account="personal", calendar_id="home@example.test"),
+                event("hidden", account="personal", calendar_id="hidden@example.test")]
+        code, result, _, _ = self.run_calendar(self.today(rows))
+        self.assertEqual(code, 0)
+        self.assertEqual([row["id"] for row in result["events"]], ["shared"])
+
+    def test_passes_through_only_meet_and_calendar_links(self):
+        rows = [event("meet", meet_url="https://meet.google.com/abc-defg-hij",
+                      html_link="https://www.google.com/calendar/event?eid=bWVldA"),
+                event("zoom", meet_url="https://zoom.example.test/j/1",
+                      html_link="https://calendar.google.com/calendar/event?eid=em9vbQ"),
+                event("lookalike", meet_url="https://meet.google.com.example.test/x",
+                      html_link="https://www.google.com/search?q=calendar"),
+                event("unsafe", meet_url="https://meet.google.com/abc def", html_link=["not", "text"])]
+        code, result, _, _ = self.run_calendar(self.today(rows))
+        self.assertEqual(code, 0)
+        self.assertEqual({row["id"]: (row["meet_url"], row["html_link"]) for row in result["events"]}, {
+            "meet": ("https://meet.google.com/abc-defg-hij", "https://www.google.com/calendar/event?eid=bWVldA"),
+            "zoom": ("", "https://calendar.google.com/calendar/event?eid=em9vbQ"),
+            "lookalike": ("", ""), "unsafe": ("", "")})
+
+    def test_unreadable_calendar_list_never_looks_like_an_empty_calendar(self):
+        for listing in ({}, {"calendars": None}, {"calendars": ["work@example.test"]}, []):
+            with self.subTest(listing=listing):
+                code, result, _, _ = self.run_calendar(self.today([event("one")]), calendars=listing)
+                self.assertEqual((code, result["status"]), (1, "error"))
+                self.assertNotIn("events", result)
 
     def test_sync_warning_keeps_valid_events_but_never_exposes_server_error(self):
         code, result, raw, _ = self.run_calendar(self.today([event("one")], last_error="fixture-secret host.internal"))

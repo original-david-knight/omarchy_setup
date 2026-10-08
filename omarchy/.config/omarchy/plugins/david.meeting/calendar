@@ -14,6 +14,9 @@ from pathlib import Path
 
 STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\Z")
 DAY = re.compile(r"\d{4}-\d{2}-\d{2}\Z")
+# Links the panel may open. open-work-url enforces the same origins.
+MEET_PREFIXES = ("https://meet.google.com/",)
+EVENT_PREFIXES = ("https://calendar.google.com/", "https://www.google.com/calendar/")
 
 
 class CalendarError(Exception):
@@ -49,9 +52,9 @@ def read_config():
         raise CalendarError("error", "Everything App configuration is unavailable") from None
 
 
-def fetch_today(base, token):
+def fetch_json(base, token, route):
     try:
-        request = urllib.request.Request(base + "/api/today", headers={"Authorization": "Bearer " + token})
+        request = urllib.request.Request(base + route, headers={"Authorization": "Bearer " + token})
         opener = urllib.request.build_opener(NoRedirect, urllib.request.ProxyHandler({}))
         with opener.open(request, timeout=20) as response:
             raw = response.read(2_000_001)
@@ -60,6 +63,27 @@ def fetch_today(base, token):
         return json.loads(raw)
     except (OSError, ValueError, TypeError, http.client.HTTPException, urllib.error.URLError):
         raise CalendarError("error", "Everything App calendar could not be loaded") from None
+
+
+def work_calendar_ids(listing):
+    """Enabled calendars the work account subscribes to.
+
+    The feed shows a calendar both accounts subscribe to once, under the
+    personal account, so a work meeting can arrive labeled personal. Its
+    calendar ID still says which calendar it came from.
+    """
+    rows = listing.get("calendars") if isinstance(listing, dict) else None
+    if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+        raise CalendarError("error", "Everything App returned an unreadable calendar")
+    return {row["calendar_id"] for row in rows
+            if row.get("account") == "work" and row.get("enabled") is True and isinstance(row.get("calendar_id"), str)}
+
+
+def link(value, prefixes):
+    """A link from the feed, or "" when it is missing or not one the panel opens."""
+    if not isinstance(value, str) or not value.startswith(prefixes) or any(ord(char) <= 32 for char in value):
+        return ""
+    return value
 
 
 def parse_stamp(value):
@@ -71,7 +95,7 @@ def parse_stamp(value):
     return parsed
 
 
-def normalize(feed):
+def normalize(feed, work_calendars):
     if not isinstance(feed, dict) or not isinstance(feed.get("connected"), bool):
         raise CalendarError("error", "Everything App returned an unreadable calendar")
     if not feed["connected"]:
@@ -95,7 +119,7 @@ def normalize(feed):
         for row in rows:
             if not isinstance(row, dict):
                 raise ValueError("invalid event")
-            if row.get("account") != "work":
+            if row.get("account") != "work" and row.get("calendar_id") not in work_calendars:
                 continue
             if not isinstance(row.get("all_day"), bool) or not isinstance(row.get("declined"), bool):
                 raise ValueError("invalid event flags")
@@ -112,7 +136,9 @@ def normalize(feed):
             if not all(isinstance(value, str) for value in (event_id, title, calendar_name, location)):
                 raise ValueError("invalid text")
             events.append({"id": event_id, "title": title, "starts_at": starts_at,
-                           "ends_at": ends_at, "calendar_name": calendar_name, "location": location})
+                           "ends_at": ends_at, "calendar_name": calendar_name, "location": location,
+                           "meet_url": link(row.get("meet_url"), MEET_PREFIXES),
+                           "html_link": link(row.get("html_link"), EVENT_PREFIXES)})
     except (KeyError, TypeError, ValueError):
         raise CalendarError("error", "Everything App returned an unreadable calendar") from None
 
@@ -130,7 +156,8 @@ def normalize(feed):
 def main():
     try:
         base, token = read_config()
-        result = normalize(fetch_today(base, token))
+        feed = fetch_json(base, token, "/api/today")
+        result = normalize(feed, work_calendar_ids(fetch_json(base, token, "/api/today/calendars")))
     except CalendarError as error:
         result = {"status": error.status, "message": error.message}
     print(json.dumps(result, separators=(",", ":")))

@@ -28,16 +28,30 @@ pick up the plugin automatically, run `omarchy restart shell`.
 ## What the panel shows
 
 The meeting section uses the existing authenticated `/api/today` feed from
-Everything App. It includes every timed, non-declined appointment whose account
-is `work`; the feed has no attendee field, so the widget cannot limit this to
-appointments with other people. It shows an ongoing appointment first, then
-the next appointment by start time.
+Everything App. It includes every timed, non-declined appointment that is on
+one of the work account's enabled calendars; the feed has no attendee field, so
+the widget cannot limit this to appointments with other people. It shows an
+ongoing appointment first, then the next appointment by start time.
+
+The work calendars come from `/api/today/calendars`, not from each event's
+`account` label. When the personal account also subscribes to the work
+calendar, the feed keeps only the personal-account copy of each event, so
+every work meeting arrives labeled `personal`. Matching on the calendar ID
+keeps those meetings.
+
+Click the meeting title, or its button, to open it in the work Chrome profile
+through `~/bin/open-work-url`. Keyboard users can select the meeting row and
+press Enter, or press `j` anywhere in the panel. The button reads **Join Google Meet**
+when the event has a Meet link, and **Open event** when it only has its Google
+Calendar page. A feed without either link opens the meeting's day in Google
+Calendar. The helper passes on only `https://meet.google.com/` links and
+Google Calendar pages, and `open-work-url` refuses any other Google URL, so a
+Zoom link falls back to the event page, where Calendar shows its join button.
+The links come from the `meet_url` and `html_link` fields of `/api/today`.
 
 The feed contains only today. Near midnight, the widget cannot show tomorrow's
-first appointment. The feed may also deduplicate a shared calendar event to a
-personal-account copy before the widget receives it; filtering for the work
-account can then omit that event. The panel reports unavailable or no remaining
-meetings instead of guessing.
+first appointment. The panel reports unavailable or no remaining meetings
+instead of guessing.
 
 Recorder controls open, start, pause or resume, and stop the installed
 `omarchy-meeting-recorder`. Tests do not start a recording. The light section

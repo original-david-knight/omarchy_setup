@@ -41,7 +41,7 @@ ShellRoot {
     height: 1000
     color: "#202326"
     Rectangle { anchors.fill: parent; color: window.color }
-    Meeting.Panel { id: panel; x: 24; y: 24; settings: ({ litra: !test.laptop }) }
+    Meeting.Panel { id: panel; x: 24; y: 24; settings: ({ litra: !test.laptop, opener: Quickshell.env("MEETING_TEST_OPENER") }) }
   }
 
   Timer {
@@ -60,6 +60,8 @@ ShellRoot {
             test.check(!test.named(panel, "lightPower").visible, "Laptop showed light power")
             test.check(!test.named(panel, "lightBrightness").visible, "Laptop showed brightness")
             test.check(!test.named(panel, "lightTemperature").visible, "Laptop showed temperature")
+            panel.moveCursor(0, 1)
+            test.check(panel.cursorRow === "avatar", "Laptop keyboard skipped the AI stand-in")
             panel.moveCursor(0, 1)
             test.check(panel.cursorRow === "refresh", "Laptop keyboard focused hidden light controls")
             panel.moveCursor(0, 1)
@@ -96,6 +98,31 @@ ShellRoot {
             test.event("Next", test.clock + 600000, test.clock + 1800000),
             test.event("Current", test.clock - 60000, test.clock + 300000)] }
           test.check(panel.nextMeeting.title === "Current" && panel.meetingOngoing, "Ongoing meeting not selected")
+          var withLinks = function(meet, page) {
+            var current = test.event("Current", test.clock - 60000, test.clock + 300000)
+            current.meet_url = meet
+            current.html_link = page
+            panel.calendarData = { status: "ready", date: panel.localDate(test.clock), events: [current] }
+            return current
+          }
+          withLinks("https://meet.google.com/abc-defg-hij", "https://www.google.com/calendar/event?eid=Y3VycmVudA")
+          test.check(panel.meetingAction === "Join Google Meet", "A meeting with a Meet link did not offer to join")
+          test.check(test.named(panel, "meetingOpen").visible, "Meeting open button is hidden")
+          test.named(panel, "meetingOpen").clicked()
+          withLinks("", "https://www.google.com/calendar/event?eid=Y3VycmVudA")
+          test.check(panel.meetingAction === "Open event", "A meeting without a Meet link did not open its event")
+          panel.cursorRow = "recorder"
+          panel.moveCursor(0, -1)
+          test.check(panel.cursorRow === "meeting", "Keyboard cannot reach the meeting")
+          panel.activateRow()
+          var bare = withLinks("", "")
+          test.check(panel.meetingLink === "https://calendar.google.com/calendar/r/day/"
+                     + Qt.formatDate(new Date(bare.starts_at), "yyyy/M/d"), "A meeting without links did not open its day")
+          panel.openMeeting()
+          panel.cursorRow = "recorder"
+          panel.calendarData = { status: "ready", date: panel.localDate(test.clock), events: [
+            test.event("Next", test.clock + 600000, test.clock + 1800000),
+            test.event("Current", test.clock - 60000, test.clock + 300000)] }
           test.check(panel.meetingTime.indexOf("In progress") === 0, "Ongoing meeting countdown is wrong")
           panel.nowMs = test.clock + 300001
           test.check(panel.nextMeeting.title === "Next", "Next meeting not selected after current ended")

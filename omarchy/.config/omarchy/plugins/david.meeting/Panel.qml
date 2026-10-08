@@ -22,6 +22,8 @@ Panel {
   property string pendingRecorderAction: ""
   property string cursorRow: "recorder"
   // fake_me AI stand-in (~/workspace/fake_me), controlled through its `fakeme` CLI
+  // Opens a link in the work Chrome profile; it refuses anything but work, Meet and Calendar URLs.
+  readonly property string openerCommand: String(setting("opener", Quickshell.env("HOME") + "/bin/open-work-url"))
   readonly property string fakemeCommand: String(setting("fakeme", "/home/david/workspace/fake_me/scripts/fakeme"))
   property var avatarData: ({ state: "unknown" })
   property string avatarError: ""
@@ -65,6 +67,11 @@ Panel {
     : !calendarCurrent ? "Calendar needs a refresh"
     : nextMeeting ? String(nextMeeting.title || "Untitled meeting")
     : calendarData.warning ? "Next work meeting unavailable" : "No more work meetings in today's agenda"
+  // The call when there is one, else the event; a feed without links still opens the meeting's day.
+  readonly property string meetingLink: !nextMeeting ? "" : nextMeeting.meet_url || nextMeeting.html_link
+    || "https://calendar.google.com/calendar/r/day/" + Qt.formatDate(new Date(nextMeeting.starts_at), "yyyy/M/d")
+  readonly property string meetingAction: !nextMeeting ? "" : nextMeeting.meet_url ? "Join Google Meet"
+    : nextMeeting.html_link ? "Open event" : "Open calendar"
   readonly property string meetingTime: !nextMeeting ? "" : meetingOngoing ? "In progress · ends " + localTime(nextMeeting.ends_at)
     : localTime(nextMeeting.starts_at) + " · in " + Math.max(1, Math.ceil((Date.parse(nextMeeting.starts_at) - nowMs) / 60000)) + " min"
   readonly property string barLabel: recording || recorderState === "stopping" || recorderState === "transcribing"
@@ -138,6 +145,9 @@ Panel {
       recorderWatchError = "Recorder status could not be read"
     }
   }
+  function openMeeting() {
+    if (meetingLink) Quickshell.execDetached([openerCommand, meetingLink])
+  }
   function openRecorder() {
     Quickshell.execDetached(["omarchy-meeting-recorder"])
   }
@@ -168,7 +178,8 @@ Panel {
     else if (avatarState !== "starting") avatar([avatarOn ? "stop" : "start"])
   }
   function activateRow() {
-    if (cursorRow === "recorder") {
+    if (cursorRow === "meeting") openMeeting()
+    else if (cursorRow === "recorder") {
       if (pendingRecorderAction !== "") return
       if (canStart) recorderAction("start")
       else openRecorder()
@@ -177,9 +188,10 @@ Panel {
     else if (cursorRow === "refresh") refresh()
   }
   function moveCursor(dx, dy) {
-    var rows = litraEnabled ? ["recorder", "avatar", "light", "brightness", "temperature", "refresh"] : ["recorder", "avatar", "refresh"]
+    var rows = (nextMeeting ? ["meeting"] : []).concat(litraEnabled
+      ? ["recorder", "avatar", "light", "brightness", "temperature", "refresh"] : ["recorder", "avatar", "refresh"])
     if (dy !== 0) cursorRow = rows[(rows.indexOf(cursorRow) + dy + rows.length) % rows.length]
-    var targets = { recorder: recorderSection, avatar: avatarSection, light: lightSection, brightness: brightness, temperature: temperature, refresh: refreshButton }
+    var targets = { meeting: meetingSection, recorder: recorderSection, avatar: avatarSection, light: lightSection, brightness: brightness, temperature: temperature, refresh: refreshButton }
     var target = targets[cursorRow]
     var top = target.mapToItem(content, 0, 0).y
     if (top < scroll.contentY) scroll.contentY = top
@@ -309,6 +321,7 @@ Panel {
       onTextKey: function(text) {
         if (text === "r") root.refresh()
         else if (text === "o") root.openRecorder()
+        else if (text === "j") root.openMeeting()
         else if (text === "p") root.recorderAction(root.recorderState === "paused" ? "resume" : "pause")
         else if (text === "s") root.recorderAction("stop")
         else if (text === "a") root.toggleAvatar()
@@ -333,7 +346,7 @@ Panel {
           spacing: Style.space(14)
 
           PanelHero { title: "Meeting"; meta: root.litraEnabled ? "Work calendar · light · recorder" : "Work calendar · recorder"; foreground: root.foreground }
-          PanelSectionHeader { text: "NEXT WORK MEETING TODAY"; foreground: root.foreground }
+          PanelSectionHeader { id: meetingSection; text: "NEXT WORK MEETING TODAY"; foreground: root.foreground }
           Text {
             width: parent.width
             text: root.calendarMessage
@@ -342,6 +355,12 @@ Panel {
             color: root.foreground
             font.family: root.fontFamily
             font.pixelSize: Style.font.title
+            MouseArea {
+              anchors.fill: parent
+              enabled: root.nextMeeting !== null
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.openMeeting()
+            }
           }
           Text {
             width: parent.width
@@ -352,6 +371,14 @@ Panel {
             color: Color.muted
             font.family: root.fontFamily
             font.pixelSize: Style.font.body
+          }
+          Button {
+            objectName: "meetingOpen"
+            visible: root.nextMeeting !== null
+            text: root.meetingAction
+            bordered: true
+            hasCursor: root.cursorRow === "meeting"
+            onClicked: root.openMeeting()
           }
           Text {
             width: parent.width

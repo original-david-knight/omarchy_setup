@@ -41,11 +41,23 @@ case "$destination" in
 esac
 
 # This launcher is intentionally narrow: shell widgets may only send the two
-# work origins through the Fluxon Chrome profile.
-github_origin="${WORK_GITHUB_ORIGIN%/}"
-jira_origin="${WORK_JIRA_ORIGIN%/}"
-if [[ $url != "$github_origin" && $url != "$github_origin"/* &&
-      $url != "$jira_origin" && $url != "$jira_origin"/* ]]; then
+# work origins, Google Meet, and Google Calendar through the Fluxon Chrome
+# profile.
+allowed=(
+  "${WORK_GITHUB_ORIGIN%/}"
+  "${WORK_JIRA_ORIGIN%/}"
+  https://meet.google.com
+  https://calendar.google.com
+  https://www.google.com/calendar
+)
+permitted=false
+for prefix in "${allowed[@]}"; do
+  if [[ $url == "$prefix" || $url == "$prefix"/* ]]; then
+    permitted=true
+    break
+  fi
+done
+if [[ $permitted != true ]]; then
   printf 'Refusing URL outside configured work origins: %s\n' "$url" >&2
   exit 2
 fi
