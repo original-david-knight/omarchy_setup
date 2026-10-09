@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Return today's timed work events from the existing Everything App feed."""
+"""Return today's timed work events, and whether a morning brief is up, from Everything App."""
 
 import http.client
 import json
@@ -153,13 +153,25 @@ def normalize(feed, work_calendars):
             "warning": "Calendar sync reported an error; events may be outdated" if last_error else ""}
 
 
+def brief_up(base, token):
+    """Whether Today is showing a morning brief now; a failed read only hides the row."""
+    try:
+        feed = fetch_json(base, token, "/api/today/brief")
+    except CalendarError:
+        return False
+    return isinstance(feed, dict) and isinstance(feed.get("brief"), dict)
+
+
 def main():
+    brief = False
     try:
         base, token = read_config()
+        brief = brief_up(base, token)
         feed = fetch_json(base, token, "/api/today")
         result = normalize(feed, work_calendar_ids(fetch_json(base, token, "/api/today/calendars")))
     except CalendarError as error:
         result = {"status": error.status, "message": error.message}
+    result["brief"] = brief
     print(json.dumps(result, separators=(",", ":")))
     return 0 if result["status"] == "ready" else 1
 

@@ -148,6 +148,10 @@ Panel {
   function openMeeting() {
     if (meetingLink) Quickshell.execDetached([openerCommand, meetingLink])
   }
+  // Today shows the brief at the top; the companion opens the app in the default browser.
+  function openBrief() {
+    if (calendarData.brief === true) Quickshell.execDetached(["everything-agent", "open", "/"])
+  }
   function openRecorder() {
     Quickshell.execDetached(["omarchy-meeting-recorder"])
   }
@@ -179,6 +183,7 @@ Panel {
   }
   function activateRow() {
     if (cursorRow === "meeting") openMeeting()
+    else if (cursorRow === "brief") openBrief()
     else if (cursorRow === "recorder") {
       if (pendingRecorderAction !== "") return
       if (canStart) recorderAction("start")
@@ -188,10 +193,10 @@ Panel {
     else if (cursorRow === "refresh") refresh()
   }
   function moveCursor(dx, dy) {
-    var rows = (nextMeeting ? ["meeting"] : []).concat(litraEnabled
+    var rows = (nextMeeting ? ["meeting"] : []).concat(calendarData.brief === true ? ["brief"] : []).concat(litraEnabled
       ? ["recorder", "avatar", "light", "brightness", "temperature", "refresh"] : ["recorder", "avatar", "refresh"])
     if (dy !== 0) cursorRow = rows[(rows.indexOf(cursorRow) + dy + rows.length) % rows.length]
-    var targets = { meeting: meetingSection, recorder: recorderSection, avatar: avatarSection, light: lightSection, brightness: brightness, temperature: temperature, refresh: refreshButton }
+    var targets = { meeting: meetingSection, brief: briefOpen, recorder: recorderSection, avatar: avatarSection, light: lightSection, brightness: brightness, temperature: temperature, refresh: refreshButton }
     var target = targets[cursorRow]
     var top = target.mapToItem(content, 0, 0).y
     if (top < scroll.contentY) scroll.contentY = top
@@ -322,6 +327,7 @@ Panel {
         if (text === "r") root.refresh()
         else if (text === "o") root.openRecorder()
         else if (text === "j") root.openMeeting()
+        else if (text === "v") root.openBrief()
         else if (text === "p") root.recorderAction(root.recorderState === "paused" ? "resume" : "pause")
         else if (text === "s") root.recorderAction("stop")
         else if (text === "a") root.toggleAvatar()
@@ -389,6 +395,15 @@ Panel {
             color: Color.urgent
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
+          }
+          Button {
+            id: briefOpen
+            objectName: "briefOpen"
+            visible: root.calendarData.brief === true
+            text: "Open morning brief"
+            bordered: true
+            hasCursor: root.cursorRow === "brief"
+            onClicked: root.openBrief()
           }
           PanelSeparator { foreground: root.foreground }
           PanelSectionHeader { id: recorderSection; text: "MEETING RECORDER"; foreground: root.foreground }
@@ -675,7 +690,7 @@ Panel {
           }
           Text {
             width: parent.width
-            text: "Arrows adjust · Enter selects\nP pause/resume · S stop · O open recorder\nA start/stop stand-in · H say hello · M mute/unmute\nT type a line · B refresh briefing · L live log"
+            text: "Arrows adjust · Enter selects · V morning brief\nP pause/resume · S stop · O open recorder\nA start/stop stand-in · H say hello · M mute/unmute\nT type a line · B refresh briefing · L live log"
             textFormat: Text.PlainText
             wrapMode: Text.Wrap
             color: Color.muted
