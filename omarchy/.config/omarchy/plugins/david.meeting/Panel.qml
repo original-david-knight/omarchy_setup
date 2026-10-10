@@ -150,7 +150,7 @@ Panel {
   }
   // Today shows the brief at the top; the companion opens the app in the default browser.
   function openBrief() {
-    if (calendarData.brief === true) Quickshell.execDetached(["everything-agent", "open", "/"])
+    if (calendarData.brief === true) Quickshell.execDetached(["everything-agent", "open", "/brief"])
   }
   function openRecorder() {
     Quickshell.execDetached(["omarchy-meeting-recorder"])
