@@ -10,6 +10,8 @@ Item {
   readonly property color ink: Color.foreground
   readonly property color muted: Qt.rgba(ink.r, ink.g, ink.b, 0.58)
   readonly property color tint: c.sourceColor
+  readonly property color eqTint: "#e6c384"
+  readonly property var bandLabels: ["32", "64", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"]
   readonly property bool music: c.sourceTab === 0
   readonly property bool podcasts: c.sourceTab === 1
   readonly property bool isPlaying: music ? c.spotifyPlaying : c.playing
@@ -27,6 +29,10 @@ Item {
   }
   onMusicChanged: scroll.contentY = 0
   onPodcastsChanged: scroll.contentY = 0
+
+  function gainText(db) {
+    return db === 0 ? "0" : (db > 0 ? "+" : "−") + Math.abs(db)
+  }
 
   component Copy: Text {
     color: view.ink
@@ -53,11 +59,21 @@ Item {
 
       Row {
         width: parent.width
+        spacing: Style.space(6)
         Column {
-          width: parent.width - pauseAll.width
+          width: parent.width - eqToggle.width - pauseAll.width - parent.spacing * 2
           spacing: Style.space(3)
           Copy { text: "Listening"; font.pixelSize: Style.font.title * 1.15; font.bold: true }
           Copy { text: "Your own little listening room"; color: view.muted; font.pixelSize: Style.font.caption }
+        }
+        ListeningButton {
+          id: eqToggle
+          anchors.verticalCenter: parent.verticalCenter
+          text: c.eqOpen ? "EQ  ▴" : "EQ  ▾"
+          tooltip: c.eqShaping ? "Equalizer is shaping Spotify, podcasts and myNoise" : "Equalizer for Spotify, podcasts and myNoise"
+          tint: view.eqTint
+          prominent: c.eqShaping
+          onClicked: c.eqOpen = !c.eqOpen
         }
         ListeningButton {
           id: pauseAll
@@ -118,6 +134,183 @@ Item {
               }
             }
           }
+        }
+      }
+
+      Rectangle {
+        visible: c.eqOpen
+        width: parent.width
+        height: eqContent.implicitHeight + Style.space(24)
+        radius: Style.space(14)
+        color: Qt.rgba(view.eqTint.r, view.eqTint.g, view.eqTint.b, 0.05)
+        border.width: 1
+        border.color: Qt.rgba(view.eqTint.r, view.eqTint.g, view.eqTint.b, 0.18)
+
+        Column {
+          id: eqContent
+          anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
+          anchors.margins: Style.space(12)
+          spacing: Style.space(10)
+
+          Row {
+            width: parent.width
+            spacing: Style.space(6)
+            Column {
+              width: parent.width - eqPower.width - eqFlat.width - parent.spacing * 2
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(3)
+              Copy { text: "EQUALIZER"; color: view.eqTint; font.pixelSize: Style.font.caption * 0.85; font.letterSpacing: 1.1; font.bold: true }
+              Copy { width: parent.width; text: "Spotify, podcasts and myNoise only"; color: view.muted; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
+            }
+            ListeningButton {
+              id: eqPower
+              anchors.verticalCenter: parent.verticalCenter
+              text: c.eq.enabled ? "On" : "Off"
+              tooltip: c.eq.enabled ? "Turn the equalizer off · Your curve is kept" : "Turn the equalizer on"
+              tint: view.eqTint
+              prominent: c.eq.enabled
+              enabled: c.eq.available
+              Accessible.checkable: true
+              Accessible.checked: c.eq.enabled
+              onClicked: c.eqCommand(["enable", c.eq.enabled ? "off" : "on"])
+            }
+            ListeningButton {
+              id: eqFlat
+              anchors.verticalCenter: parent.verticalCenter
+              text: "Flat"
+              tooltip: "Set every band back to 0 dB"
+              tint: view.eqTint
+              enabled: c.eq.available
+              onClicked: c.eqCommand(["preset", "flat"])
+            }
+          }
+
+          Row {
+            id: presetRow
+            width: parent.width
+            spacing: Style.space(6)
+            Repeater {
+              model: [["bass", "Bass"], ["warm", "Warm"], ["voice", "Voice"], ["bright", "Bright"]]
+              ListeningButton {
+                required property var modelData
+                width: (presetRow.width - presetRow.spacing * 3) / 4
+                text: modelData[1]
+                tooltip: modelData[0] === "voice" ? "Clearer speech for podcasts" : modelData[1] + " preset"
+                tint: view.eqTint
+                prominent: c.eq.enabled && c.eq.preset === modelData[0]
+                enabled: c.eq.available
+                onClicked: c.eqCommand(["preset", modelData[0]])
+              }
+            }
+          }
+
+          Row {
+            width: parent.width
+            height: Style.space(150)
+            spacing: Style.space(4)
+            opacity: !c.eq.available ? 0.35 : c.eq.enabled ? 1 : 0.55
+
+            Repeater {
+              model: 10
+              Item {
+                id: band
+                required property int index
+                readonly property real db: c.eqBand(index)
+                width: (parent.width - parent.spacing * 9) / 10
+                height: parent.height
+
+                Copy {
+                  id: gainLabel
+                  anchors.top: parent.top
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  text: view.gainText(band.db)
+                  color: band.db === 0 ? view.muted : view.ink
+                  font.pixelSize: Style.font.caption
+                  font.bold: band.db !== 0
+                }
+
+                Item {
+                  id: rail
+                  anchors.top: gainLabel.bottom
+                  anchors.bottom: freqLabel.top
+                  anchors.topMargin: Style.space(4)
+                  anchors.bottomMargin: Style.space(4)
+                  width: parent.width
+                  readonly property real knobSize: Style.space(12)
+                  readonly property real travel: Math.max(1, height - knobSize)
+
+                  Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: Style.space(3); height: parent.height; radius: width / 2
+                    color: Qt.rgba(view.eqTint.r, view.eqTint.g, view.eqTint.b, 0.14)
+                  }
+                  Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: parent.width * 0.7; height: 1
+                    y: parent.height / 2
+                    color: Qt.rgba(view.ink.r, view.ink.g, view.ink.b, 0.25)
+                  }
+                  Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: Style.space(3); radius: width / 2
+                    height: Math.abs(band.db) / 24 * parent.height
+                    y: band.db >= 0 ? parent.height / 2 - height : parent.height / 2
+                    color: view.eqTint
+                  }
+                  Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: rail.knobSize; height: width; radius: width / 2
+                    y: (12 - band.db) / 24 * rail.travel
+                    color: view.eqTint
+                    border.width: Math.max(1, Style.space(2))
+                    border.color: Color.background
+                    scale: bandMouse.containsMouse || bandMouse.pressed ? 1.15 : 1
+                    Behavior on y { enabled: !bandMouse.pressed; NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                    Behavior on scale { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+                  }
+                  MouseArea {
+                    id: bandMouse
+                    anchors.fill: parent
+                    anchors.leftMargin: -Style.space(2)
+                    anchors.rightMargin: -Style.space(2)
+                    hoverEnabled: true
+                    enabled: c.eq.available
+                    cursorShape: Qt.PointingHandCursor
+                    preventStealing: true
+                    function dbAt(y) {
+                      return Math.max(-12, Math.min(12, Math.round((12 - (y - rail.knobSize / 2) / rail.travel * 24) * 2) / 2))
+                    }
+                    onPressed: function(mouse) { c.previewEqBand(band.index, dbAt(mouse.y)) }
+                    onPositionChanged: function(mouse) { if (pressed) c.previewEqBand(band.index, dbAt(mouse.y)) }
+                    onReleased: c.setEqBand(band.index, band.db)
+                    onDoubleClicked: c.previewEqBand(band.index, 0)
+                    onWheel: function(wheel) { c.setEqBand(band.index, band.db + (wheel.angleDelta.y > 0 ? 0.5 : -0.5)) }
+                  }
+                }
+
+                Copy {
+                  id: freqLabel
+                  anchors.bottom: parent.bottom
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  text: view.bandLabels[band.index]
+                  color: view.muted
+                  font.pixelSize: Style.font.caption
+                }
+              }
+            }
+          }
+
+          Copy {
+            width: parent.width
+            text: !c.eq.available ? "The Listening EQ sink is not running. Run ./stow_all.sh, or: systemctl --user start filter-chain.service"
+              : !c.eq.enabled ? "The equalizer is off. Your curve is kept for when you turn it back on."
+              : c.eq.preamp < 0 ? "Drag, scroll or double-click a band. Output is lowered " + Math.abs(c.eq.preamp) + " dB to leave room for boosts."
+              : "Drag, scroll or double-click a band. Changes apply as you release."
+            color: view.muted
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.WordWrap
+          }
+          Copy { visible: c.eqError !== ""; width: parent.width; text: c.eqError; color: Color.urgent; wrapMode: Text.WordWrap; font.pixelSize: Style.font.caption }
         }
       }
 
@@ -573,7 +766,7 @@ Item {
       Rectangle { width: parent.width; height: 1; color: Qt.rgba(view.ink.r, view.ink.g, view.ink.b, 0.10) }
       Copy {
         width: parent.width
-        text: "1 / 2 / 3  switch source     Space  play / pause     Esc  close"
+        text: "1 / 2 / 3  source     Q  equalizer     Space  play / pause     Esc  close"
         color: view.muted
         font.pixelSize: Style.font.caption * 0.9
         horizontalAlignment: Text.AlignHCenter

@@ -79,8 +79,11 @@ def client_main(args):
             return request(payload)
         except (OSError, ValueError):
             with (STATE / "mynoise.log").open("w") as log:
+                # Play through the Listening EQ sink; PipeWire falls back to
+                # the default output when it is missing.
                 subprocess.Popen([sys.executable, str(BASE / "mynoise"), "--serve"],
                                  stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+                                 env={**os.environ, "PULSE_SINK": "listening_eq"},
                                  start_new_session=True)
             for _ in range(100):
                 time.sleep(0.1)

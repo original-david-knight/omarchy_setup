@@ -47,6 +47,13 @@ Panel {
   readonly property bool playlistsLoading: playlistFetch.running
   readonly property bool playlistStarting: playlistPlay.running
   readonly property string libraryHelper: Quickshell.env("HOME") + "/.config/omarchy/plugins/david.podcasts/spotify-library"
+  property bool eqOpen: false
+  property var eq: ({ available: false, applied: false, enabled: true, preset: "flat", bands: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], preamp: 0 })
+  property var eqPreview: ({})
+  property string eqError: ""
+  property var eqQueue: []
+  readonly property string eqHelper: Quickshell.env("HOME") + "/.config/omarchy/plugins/david.podcasts/eq"
+  readonly property bool eqShaping: eq.available && eq.enabled && eq.bands.some(function(db) { return db !== 0 })
   readonly property var spotify: {
     var players = Mpris.players.values
     for (var i = 0; i < players.length; i++) {
@@ -136,6 +143,33 @@ Panel {
     else if (lastPlaybackSource === 1) togglePlayback()
     else if (lastPlaybackSource === 2) noiseCommand(["toggle", lastNoise])
     else toggleSelected()
+  }
+  function eqCommand(args) {
+    eqError = ""
+    // Wheel turns arrive faster than the helper; keep only a band's latest gain.
+    if (args[0] === "set-band")
+      eqQueue = eqQueue.filter(function(queued) { return queued[0] !== "set-band" || queued[1] !== args[1] })
+    eqQueue = eqQueue.concat([args])
+    pumpEq()
+  }
+  function pumpEq() {
+    if (eqProcess.running || !eqQueue.length) return
+    eqProcess.command = [eqHelper].concat(eqQueue[0])
+    eqQueue = eqQueue.slice(1)
+    eqProcess.running = true
+  }
+  function eqBand(index) {
+    return eqPreview[index] !== undefined ? eqPreview[index] : Number(eq.bands[index] || 0)
+  }
+  function previewEqBand(index, db) {
+    var next = Object.assign({}, eqPreview)
+    next[index] = db
+    eqPreview = next
+  }
+  function setEqBand(index, db) {
+    db = Math.max(-12, Math.min(12, Math.round(db * 2) / 2))
+    previewEqBand(index, db)
+    eqCommand(["set-band", String(index + 1), String(db)])
   }
   function pauseAll() {
     if (spotify && spotify.canPause) spotify.pause()
@@ -430,10 +464,13 @@ Panel {
 
   onOpenedChanged: if (opened) {
     refresh()
+    eqCommand(["sync"])
     if (sourceTab === 0) refreshPlaylists(false)
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
   onSourceTabChanged: if (opened && sourceTab === 0) refreshPlaylists(false)
+  // Spotify starts outside the widget; move its stream onto the EQ sink.
+  onSpotifyPlayingChanged: if (spotifyPlaying) eqCommand(["sync"])
 
   Process {
     id: playlistFetch
@@ -468,6 +505,23 @@ Panel {
     }
   }
 
+  Process {
+    id: eqProcess
+    stdout: StdioCollector {
+      onStreamFinished: {
+        if (!text.trim()) return
+        try { root.eq = JSON.parse(text) }
+        catch (error) { root.eqError = "The equalizer could not be read" }
+      }
+    }
+    stderr: StdioCollector { onStreamFinished: if (text.trim()) root.eqError = text.trim() }
+    onExited: function(code) {
+      if (code !== 0 && !root.eqError) root.eqError = "The equalizer could not be changed"
+      if (!root.eqQueue.length) root.eqPreview = ({})
+      Qt.callLater(function() { root.pumpEq() })
+    }
+  }
+
   FileView {
     path: Quickshell.env("HOME") + "/.config/omarchy/plugins/david.podcasts/soundscapes.json"
     onLoaded: {
@@ -482,6 +536,7 @@ Panel {
       if (index >= 0) root.sourceTab = index
       root.open()
     }
+    function showEq(): void { root.eqOpen = true; root.open() }
     function playPause(): void { root.toggleActive() }
     function pauseAll(): void { root.pauseAll() }
     function status(): string {
@@ -489,7 +544,7 @@ Panel {
         spotify: root.spotify ? {title: root.spotify.trackTitle, artist: root.spotify.trackArtist,
           artwork: root.spotify.trackArtUrl, playing: root.spotifyPlaying} : null,
         playlists: {count: root.playlists.length, selected: root.selectedPlaylistUri, error: root.playlistError},
-        podcasts: {count: root.entries.length, playing: root.playing}, sounds: root.noiseState})
+        podcasts: {count: root.entries.length, playing: root.playing}, sounds: root.noiseState, eq: root.eq})
     }
   }
   Process {
@@ -653,7 +708,7 @@ Panel {
     open: root.opened
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(460))
-    contentHeight: panel.fittedContentHeight(listening.implicitHeight, Style.space(root.sourceTab === 0 ? 840 : 740))
+    contentHeight: panel.fittedContentHeight(listening.implicitHeight, Style.space((root.sourceTab === 0 ? 840 : 740) + (root.eqOpen ? 300 : 0)))
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -671,6 +726,7 @@ Panel {
           else root.refresh()
         }
         else if (text === "e" || text === "E") root.openEverything("/podcasts/queue")
+        else if (text === "q" || text === "Q") root.eqOpen = !root.eqOpen
         else if (text === "1" || text === "2" || text === "3") root.sourceTab = Number(text) - 1
       }
       ListeningView {

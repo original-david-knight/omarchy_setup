@@ -1,0 +1,206 @@
+#!/usr/bin/env python3
+"""Ten-band equalizer for the Listening sources, applied on PipeWire's listening_eq sink."""
+import fcntl
+import json
+import math
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+
+SINK = "listening_eq"
+FREQUENCIES = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
+LIMIT = 12.0
+PRESETS = {
+    "flat": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    "bass": [6, 5, 3.5, 1.5, 0, 0, 0, 0, 0, 0],
+    "warm": [3, 3, 2, 1, 0, 0, -0.5, -1, -1.5, -2],
+    "voice": [-4, -3, -1.5, 0, 1, 2, 3, 2.5, 1, 0],
+    "bright": [0, 0, 0, 0, 0, 0.5, 1.5, 2.5, 3.5, 4],
+}
+# Spotify starts outside the widget, so its streams are moved onto the sink;
+# WirePlumber remembers the move for later launches. The widget's own mpv and
+# myNoise players name the sink when they start.
+ROUTED_APPS = {"Spotify"}
+STATE = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state"))) / "david-listening"
+
+
+def clean_band(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return 0.0
+    return max(-LIMIT, min(LIMIT, round(value * 2) / 2))
+
+
+def load():
+    try:
+        saved = json.loads((STATE / "eq.json").read_text())
+    except (OSError, ValueError):
+        saved = {}
+    if not isinstance(saved, dict):
+        saved = {}
+    bands = saved.get("bands")
+    bands = [clean_band(v) for v in bands] if isinstance(bands, list) and len(bands) == 10 else [0.0] * 10
+    preset = next((name for name, curve in PRESETS.items() if curve == bands), "custom")
+    return {"enabled": saved.get("enabled") is not False, "preset": preset, "bands": bands}
+
+
+def save(state):
+    STATE.mkdir(mode=0o700, parents=True, exist_ok=True)
+    tmp = STATE / "eq.json.tmp"
+    tmp.write_text(json.dumps(state))
+    tmp.replace(STATE / "eq.json")
+
+
+def target(state):
+    """The live gains and preamp headroom for the largest boost."""
+    gains = state["bands"] if state["enabled"] else [0.0] * 10
+    preamp = -max(gains) if max(gains) > 0 else 0.0
+    return gains, preamp
+
+
+def sink():
+    """Return (node id, live control values), or None while the sink is missing."""
+    try:
+        result = subprocess.run(["pw-dump", SINK], capture_output=True, text=True, timeout=5)
+        objects = json.loads(result.stdout or "[]")
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+    for obj in objects:
+        info = obj.get("info") or {}
+        if (info.get("props") or {}).get("node.name") != SINK:
+            continue
+        live = {}
+        for param in (info.get("params") or {}).get("Props", []):
+            values = param.get("params") if isinstance(param, dict) else None
+            if isinstance(values, list):
+                live.update(zip(values[::2], values[1::2]))
+        return obj["id"], live
+    return None
+
+
+def matches(live, gains, preamp):
+    try:
+        return (all(abs(live[f"band_{i}:Gain"] - gain) < 0.01 for i, gain in enumerate(gains, 1))
+                and abs(live["preamp:Mult"] - 10 ** (preamp / 20)) < 0.001)
+    except (KeyError, TypeError):
+        return False
+
+
+def push(node, gains, preamp):
+    pairs = [f'"band_{i}:Gain" {gain:.2f}' for i, gain in enumerate(gains, 1)]
+    pairs.append(f'"preamp:Mult" {10 ** (preamp / 20):.6f}')
+    subprocess.run(["pw-cli", "set-param", str(node), "Props", "{ params = [ " + " ".join(pairs) + " ] }"],
+                   capture_output=True, timeout=5)
+
+
+def prime():
+    # A filter-chain started since login drops control changes until audio
+    # has passed through it once, so send it 50 ms of silence.
+    subprocess.run(["pw-cat", "--playback", "--target", SINK, "--raw", "--rate", "48000", "--channels", "2",
+                    "--format", "s16", "-P", "{ media.name = \"Listening EQ wake\" }", "-"],
+                   input=bytes(19200), capture_output=True, timeout=5)
+
+
+def apply(state, wait=0.0):
+    """Make the sink match state: True or False, or None while the sink is missing."""
+    gains, preamp = target(state)
+    deadline = time.monotonic() + wait
+    found = sink()
+    while found is None and time.monotonic() < deadline:
+        time.sleep(0.25)
+        found = sink()
+    if found is None:
+        return None
+    if matches(found[1], gains, preamp):
+        return True
+    for attempt in range(2):
+        push(found[0], gains, preamp)
+        time.sleep(0.1)
+        found = sink() or found
+        if matches(found[1], gains, preamp):
+            return True
+        if attempt == 0:
+            prime()
+    return False
+
+
+def route():
+    try:
+        sinks = json.loads(subprocess.run(["pactl", "-f", "json", "list", "sinks"], capture_output=True,
+                                          text=True, timeout=5).stdout or "[]")
+        index = next((s["index"] for s in sinks if s.get("name") == SINK), None)
+        if index is None:
+            return
+        inputs = json.loads(subprocess.run(["pactl", "-f", "json", "list", "sink-inputs"], capture_output=True,
+                                           text=True, timeout=5).stdout or "[]")
+        for stream in inputs:
+            if (stream.get("properties") or {}).get("application.name") in ROUTED_APPS and stream.get("sink") != index:
+                subprocess.run(["pactl", "move-sink-input", str(stream["index"]), SINK], capture_output=True, timeout=5)
+    except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError):
+        pass
+
+
+def status(state, applied):
+    return {"available": applied is not None, "applied": bool(applied), "enabled": state["enabled"],
+            "preset": state["preset"], "bands": state["bands"], "preamp": target(state)[1],
+            "frequencies": FREQUENCIES, "presets": list(PRESETS)}
+
+
+def parse_db(text):
+    value = float(text)
+    if not math.isfinite(value) or abs(value) > LIMIT:
+        raise ValueError(f"Choose a gain between -{LIMIT:g} and {LIMIT:g} dB.")
+    return round(value * 2) / 2
+
+
+def edit(state, args):
+    """Apply one change to state in place; ValueError rejects the command."""
+    if args[0] == "set-band" and len(args) == 3:
+        band = int(args[1]) if args[1].isdigit() else 0
+        if not 1 <= band <= 10:
+            raise ValueError("Choose a band from 1 to 10.")
+        state["bands"][band - 1] = parse_db(args[2])
+    elif args[0] == "set-bands" and len(args) == 11:
+        state["bands"] = [parse_db(v) for v in args[1:]]
+    elif args[0] == "preset" and len(args) == 2 and args[1] in PRESETS:
+        state["bands"] = [float(v) for v in PRESETS[args[1]]]
+        state["enabled"] = True
+    elif args[0] == "enable" and len(args) == 2 and args[1] in ("on", "off", "toggle"):
+        state["enabled"] = not state["enabled"] if args[1] == "toggle" else args[1] == "on"
+    else:
+        raise ValueError("Usage: eq [status | sync | apply [--wait SECONDS] | set-band N DB | set-bands DB×10 |"
+                         " preset " + "|".join(PRESETS) + " | enable on|off|toggle]")
+    state["preset"] = next((name for name, curve in PRESETS.items() if [float(v) for v in curve] == state["bands"]),
+                           "custom")
+
+
+def main(args):
+    if args in ([], ["status"]):
+        state = load()
+        found = sink()
+        return status(state, None if found is None else matches(found[1], *target(state)))
+    STATE.mkdir(mode=0o700, parents=True, exist_ok=True)
+    # Every monitor's bar runs this helper; serialize so edits are not lost.
+    with (STATE / "eq.lock").open("w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        state = load()
+        if args == ["sync"]:
+            route()
+        elif args[:1] == ["apply"]:
+            wait = float(args[2]) if args[1:2] == ["--wait"] and len(args) == 3 else 0.0
+            if len(args) not in (1, 3) or not 0 <= wait <= 60:
+                raise ValueError("Usage: eq apply [--wait SECONDS]")
+            return status(state, apply(state, wait))
+        else:
+            edit(state, args)
+            save(state)
+        return status(state, apply(state))
+
+
+if __name__ == "__main__":
+    try:
+        print(json.dumps(main(sys.argv[1:])))
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        print(str(error) if isinstance(error, ValueError) else "The Listening EQ could not be changed.", file=sys.stderr)
+        sys.exit(1)

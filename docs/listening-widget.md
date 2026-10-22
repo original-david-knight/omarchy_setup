@@ -22,14 +22,48 @@ narrow displays use a compact artwork button.
   and Summer Night. Each has independent play/pause and volume. **Tune** opens
   its official web mixer; closing that window leaves playback running.
 
+## Equalizer
+
+**EQ** in the panel header (or `Q`) opens a ten-band equalizer, 32 Hz to
+16 kHz in half-decibel steps up to ±12 dB, with Bass, Warm, Voice, Bright and
+Flat presets and an on/off switch that keeps the curve. Drag or scroll a band;
+double-click resets it. The button fills in while the curve is shaping sound.
+
+It changes only the Listening sources. Spotify, podcasts and myNoise play into
+a PipeWire filter-chain sink, `listening_eq`, which passes on to whatever
+output is the default; games, calls and browsers never enter it. The widget's
+mpv and myNoise players name the sink when they start. Spotify starts outside
+the widget, so opening the panel or starting Spotify moves its stream onto the
+sink, and WirePlumber remembers that for later launches. Moving Spotify
+elsewhere is undone the next time the panel opens; turn the EQ off instead.
+When the sink is missing, every source falls back to the default output.
+
+A preamp lowers the output by the largest boost to add headroom. Overlapping
+bands can still exceed that headroom; this is not a limiter.
+Off sets every band and the preamp to unity, so the sound is unchanged.
+
+The sink is `desktop/.config/pipewire/filter-chain.conf.d/70-listening-eq.conf`,
+run by PipeWire's own `filter-chain.service`, separate from the main daemon,
+so restarting it interrupts only Listening audio. `activate.sh` enables it and
+restarts it only when that file changes. The curve is saved in
+`~/.local/state/david-listening/eq.json`. A filter-chain drops control changes
+until audio has passed through it once, so the `eq` helper sends the new sink
+50 ms of silence when a write does not stick. A drop-in on the service
+reapplies the saved curve whenever the sink starts, including after PipeWire
+restarts.
+
+The Arctis base station has its own hardware EQ in the headset widget; it
+shapes everything sent to that headset, while this one follows Listening to any
+output.
+
 Starting music from the widget pauses podcasts; starting a podcast pauses
 Spotify. Soundscapes can play together and underneath either source. Switching
 tabs only changes the view. **Ⅱ All** pauses every source controlled here.
 
 Press `Super+M` or click the bar button to open or close. Middle-click toggles the active source;
 right-click pauses all. In the panel, `1`/`2`/`3`, left/right, or Tab switch
-sources, Space plays/pauses, `R` refreshes podcasts, `E` opens the queue, and
-Escape closes. When several sources play, the middle-click priority is
+sources, Space plays/pauses, `R` refreshes podcasts, `E` opens the queue, `Q`
+opens the equalizer, and Escape closes. When several sources play, the middle-click priority is
 Spotify, podcasts, then ambience; use pause-all to silence all three.
 
 Keyboard media keys follow the source that most recently started playing,
@@ -77,6 +111,11 @@ advertises through MPRIS.
 omarchy-shell david.listening show spotify  # also podcasts or mynoise
 omarchy-shell david.listening status
 omarchy-shell david.listening pauseAll
+omarchy-shell david.listening showEq
+~/.config/omarchy/plugins/david.podcasts/eq status          # available, applied, curve
+~/.config/omarchy/plugins/david.podcasts/eq preset voice    # also set-band 3 4.5, enable off
+systemctl --user status filter-chain.service
+pactl list short sink-inputs                                # Listening sources on listening_eq
 ~/.config/omarchy/plugins/david.podcasts/mynoise status
 ~/.config/omarchy/plugins/david.podcasts/mynoise shutdown
 omarchy plugin validate ~/.config/omarchy/plugins/david.podcasts

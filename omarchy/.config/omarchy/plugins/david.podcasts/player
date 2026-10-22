@@ -49,6 +49,7 @@ ensure_player() {
     --force-window=no \
     --input-media-keys=no \
     --resume-playback=no \
+    --audio-device=pipewire/listening_eq \
     "${mpris_args[@]}" \
     --input-ipc-server="$socket" \
     >/dev/null 2>&1 </dev/null &

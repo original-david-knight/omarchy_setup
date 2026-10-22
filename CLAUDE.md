@@ -84,8 +84,11 @@ plugin in the public stow package. `stow_all.sh` validates that invariant.
 the existing Everything podcast player, and three independently controlled
 myNoise soundscapes. Its stable ID preserves both profile layouts. The
 `david.media` service routes media keys to the last source played, including
-podcasts through mpv-mpris. `install_listening.sh` installs its dependencies. See
-`docs/listening-widget.md` for controls, configuration, and diagnostics.
+podcasts through mpv-mpris. Its **EQ** shapes only those three sources through
+the `listening_eq` PipeWire filter-chain sink (`desktop/.config/pipewire/`), run by
+`filter-chain.service`, which `activate.sh` enables. `install_listening.sh`
+installs its dependencies. See `docs/listening-widget.md` for controls,
+configuration, and diagnostics.
 
 `david.headset` controls the SteelSeries Arctis Nova Pro Omni through its base
 station's vendor HID interface: ANC mode and strength, transparency, the DAC's
