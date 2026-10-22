@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+omarchy pkg drop typora typora-debug
+applications_dir="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+if [[ -e $applications_dir/typora.desktop || -L $applications_dir/typora.desktop ]]; then
+  rm -- "$applications_dir/typora.desktop"
+fi
+if [[ -d $applications_dir ]]; then
+  update-desktop-database "$applications_dir"
+fi
 mapfile -t packages < <(sed 's/#.*//; /^[[:space:]]*$/d' "$repo_dir/packages/core.txt")
 exit_status=0
 if omarchy pkg add "${packages[@]}"; then :; else

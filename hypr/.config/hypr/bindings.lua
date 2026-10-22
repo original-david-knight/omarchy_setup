@@ -77,6 +77,8 @@ o.bind("code:165", "Previous track", "omarchy-shell media previous", { locked = 
 -- Ctrl + the media Next key cycles Herdr workspaces, including the custom keycode.
 o.bind("CTRL + XF86AudioNext", "Next Herdr workspace", home .. "/bin/herdr-tmux workspace next")
 o.bind("CTRL + code:163", "Next Herdr workspace", home .. "/bin/herdr-tmux workspace next")
+o.bind("SHIFT + XF86AudioNext", "Next Herdr agent", home .. "/bin/herdr-tmux agent next")
+o.bind("SHIFT + code:163", "Next Herdr agent", home .. "/bin/herdr-tmux agent next")
 hl.unbind("XF86AudioPause") -- Was: Omarchy media play/pause.
 hl.unbind("XF86AudioPlay") -- Was: Omarchy media play/pause.
 o.bind("XF86AudioPause", "Play/pause", home .. "/bin/media-play-pause", { locked = true })

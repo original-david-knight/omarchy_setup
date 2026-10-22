@@ -91,6 +91,7 @@ private phase, after GitHub authentication and the private checkout handoff.
 
 Dropbox is currently excluded from installation, bar layouts, account sign-in,
 and readiness checks.
+Setup removes Typora, its debug package, and its old user-level launcher if present.
 
 Stock widgets and standard OS services come from Omarchy. Package repositories
 and agent CLIs remain rolling releases. `toolchains.json` pins .NET and the

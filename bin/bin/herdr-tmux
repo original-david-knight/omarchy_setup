@@ -8,6 +8,7 @@ built-in action at all. This covers the gap by talking to the herdr socket API:
   tab select <n>           focus the nth tab             (tmux: prefix <n>)
   tab move left|right      reorder the current tab       (tmux: M-S-Left / M-S-Right)
   workspace next|prev      cycle workspaces              (tmux: prefix N / prefix P)
+  agent next               focus the next detected agent
   resize <dir> [amount]    grow the pane toward <dir>    (tmux: C-M-S-<arrow>)
   theme cycle              next built-in theme           (tmux: prefix T)
 
@@ -156,6 +157,17 @@ def cmd_workspace(args):
     call("workspace.focus", {"workspace_id": target["workspace_id"]})
 
 
+def cmd_agent(args):
+    if args != ["next"]:
+        die("agent needs next")
+    agents = call("agent.list")["agents"]
+    if not agents:
+        return
+    current = next((index for index, agent in enumerate(agents) if agent["focused"]), -1)
+    target = step(agents, current, 1)
+    call("agent.focus", {"target": target["pane_id"]})
+
+
 def cmd_resize(args):
     if not args or args[0] not in DIRECTIONS:
         die("resize needs one of " + "|".join(DIRECTIONS))
@@ -216,6 +228,7 @@ def cmd_theme(args):
 COMMANDS = {
     "tab": cmd_tab,
     "workspace": cmd_workspace,
+    "agent": cmd_agent,
     "resize": cmd_resize,
     "theme": cmd_theme,
 }
