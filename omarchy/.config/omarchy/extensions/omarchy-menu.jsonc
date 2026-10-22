@@ -1,0 +1,12 @@
+{
+  "style.backgrounds-manage": {"icon":"","label":"Manage Backgrounds","aliases":["backgrounds","wallpapers"],"description":"Add and remove backgrounds for the current theme","action":"omarchy-shell shell summon david.backgrounds '{}'"},
+  "fractals": {"icon": "󰏘", "label": "Fractals", "description": "Explore Mandelbrot and Julia fractals", "action": "uwsm-app -- \"$HOME/.local/bin/fractals\"", "when": "test -x \"$HOME/.local/bin/fractals\""},
+  "system.reboot-to-windows": {
+    "icon": "󰍲",
+    "label": "Reboot to Windows",
+    "aliases": ["windows", "restart to windows"],
+    "description": "Boot Windows once using the existing reboot command",
+    "action": "\"$HOME/bin/reboot-to-windows\" --gui",
+    "when": "test -x \"$HOME/bin/reboot-to-windows\""
+  }
+}

@@ -1,50 +1,68 @@
 #!/usr/bin/env bash
 # Reboot straight into Windows using the firmware's own boot entry.
 #
-# This is the reliable path: instead of GRUB chainloading bootmgfw.efi, it asks
-# the UEFI firmware to boot the Windows Boot Manager once (BootNext), exactly as
-# if you had picked it from the firmware boot menu. BootNext is one-shot, so the
-# next boot after Windows returns to GRUB as normal.
+# BootNext selects Windows for one boot, then returns to the normal boot order.
+# --gui uses the Omarchy confirmation menu. Privileged commands use passwordless sudo.
+# --dry-run finds the Windows entry without changing the boot setting.
 #
 # The good Windows ESP is /dev/sda1, partition GUID 7b363525-5fe7-4457-b8ac-cf38e474e7cf.
 
 set -euo pipefail
 
 WIN_ESP_PARTUUID="7b363525-5fe7-4457-b8ac-cf38e474e7cf"
+mode="${1:-}"
+case "$mode" in
+    ''|--gui|--dry-run) ;;
+    *) echo "usage: reboot-to-windows [--gui|--dry-run]" >&2; exit 2 ;;
+esac
 
-if ! command -v efibootmgr >/dev/null 2>&1; then
-    echo "error: efibootmgr not installed (sudo pacman -S efibootmgr)" >&2
+fail() {
+    echo "error: $1" >&2
+    if [[ "$mode" == --gui ]]; then
+        notify-send --urgency=critical "Reboot to Windows" "$1" || true
+    fi
     exit 1
+}
+
+if [[ "$mode" == --gui ]]; then
+    choice=$(omarchy menu select "Reboot to Windows. Are you sure?" Yes No -- --width 420) || exit 0
+    [[ "$choice" == Yes ]] || exit 0
 fi
 
-# Find the Windows Boot Manager entry that lives on the good ESP. Matching on the
-# partition GUID rather than the label avoids picking up any stale duplicate that
-# shares the name "Windows Boot Manager".
-entry="$(sudo efibootmgr -v \
-    | grep -i 'Windows Boot Manager' \
-    | grep -i "$WIN_ESP_PARTUUID" \
-    | head -1 \
-    | sed -n 's/^Boot\([0-9A-Fa-f]\{4\}\).*/\1/p')"
+if ! command -v efibootmgr >/dev/null 2>&1; then
+    fail "efibootmgr is not installed (sudo pacman -S efibootmgr)."
+fi
+
+# The partition GUID distinguishes this entry from stale Windows entries.
+boot_entries=$(efibootmgr -v) || fail "Could not read the firmware boot entries."
+entry=$(awk -v guid="$WIN_ESP_PARTUUID" '
+    /^Boot[[:xdigit:]]{4}/ && /[Ww]indows [Bb]oot [Mm]anager/ && index(tolower($0), guid) {
+        print substr($1, 5, 4)
+        exit
+    }
+' <<< "$boot_entries")
 
 if [[ -z "$entry" ]]; then
-    echo "error: no 'Windows Boot Manager' firmware entry found on ESP $WIN_ESP_PARTUUID" >&2
-    echo "current entries:" >&2
-    sudo efibootmgr -v >&2
-    exit 1
+    fail "No Windows Boot Manager firmware entry found on ESP $WIN_ESP_PARTUUID."
 fi
 
 echo "Found Windows Boot Manager on the good ESP: Boot$entry"
 
-if [[ "${1:-}" == "--dry-run" ]]; then
+if [[ "$mode" == --dry-run ]]; then
     echo "dry run: would set BootNext=$entry and reboot"
     exit 0
 fi
 
-sudo efibootmgr --bootnext "$entry" >/dev/null
+if [[ "$mode" != --gui ]]; then
+    read -rp "Reboot now? [y/N] " reply || exit 0
+    case "$reply" in
+        [Yy]*) ;;
+        *) echo "Not rebooting."; exit 0 ;;
+    esac
+fi
+
+sudo -n efibootmgr --bootnext "$entry" >/dev/null \
+    || fail "Could not select Windows for the next boot."
 echo "BootNext set to Boot$entry -- next boot goes to Windows (one shot)."
 
-read -rp "Reboot now? [y/N] " reply
-case "$reply" in
-    [Yy]*) systemctl reboot ;;
-    *)     echo "Not rebooting. BootNext is still armed for the next reboot." ;;
-esac
+sudo -n systemctl reboot || fail "Windows is selected for the next boot, but the reboot failed."
