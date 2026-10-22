@@ -2,6 +2,10 @@
 
 Recorded September 9, 2026 (America/Los_Angeles), for the desktop `cosmic`.
 
+Current status, October 18: all four package holds have been removed. The
+upgrade preview succeeds; installation, reboot, and monitor-wake validation
+remain pending.
+
 ## Situation
 
 Twice in succession, returning after idle left only the left ASUS monitor
@@ -44,16 +48,19 @@ These three packages must move together: the Hyprland and hyprtoolkit
 rebuilds depend on Aquamarine's changed shared-library ABI. The rollback
 uses their signed packages already in `/var/cache/pacman/pkg`.
 
-The temporary hold is `/etc/pacman.d/omarchy-monitor-wake-hold.conf`, included
-from the `[options]` section of `/etc/pacman.conf`. It contains:
+The temporary hold used `/etc/pacman.d/omarchy-monitor-wake-hold.conf`, included
+from the `[options]` section of `/etc/pacman.conf`. Its final contents were:
 
 ```ini
-IgnorePkg = aquamarine hyprland hyprtoolkit
+IgnorePkg = aquamarine hyprland hyprtoolkit hyprland-guiutils
 ```
 
-This prevents normal Omarchy updates from reinstalling the affected versions.
-**It also blocks future fixed versions until explicitly removed.** It has no
-automatic expiry. Do not force dependency-breaking updates around the hold.
+The `hyprland-guiutils` hold was added October 18 to keep it compatible with
+the held toolkit. See the October 18 follow-up below.
+
+This prevented normal Omarchy updates from reinstalling the affected versions.
+It also blocked future fixed versions until explicitly removed, with no
+automatic expiry. Do not force dependency-breaking updates around such a hold.
 This is a local incident workaround, not a permanent setup default for other
 machines. Kernel, NVIDIA driver, monitor layout, refresh-rate configuration,
 and automatic lock/display-sleep settings are not part of this rollback.
@@ -66,7 +73,7 @@ old loaded library until its process exits; `hyprctl reload` does not replace it
 After reboot, check:
 
 ```sh
-pacman -Q aquamarine hyprland hyprtoolkit
+pacman -Q aquamarine hyprland hyprtoolkit hyprland-guiutils
 pacman-conf IgnorePkg
 hyprctl version
 hyprctl monitors all
@@ -124,6 +131,45 @@ all three monitors currently report their expected resolutions. No sleep/wake
 test or test of 0.15.1 was performed during this investigation. No packages,
 holds, repository settings, or system package databases were changed.
 
+## Follow-up: October 18, 2026
+
+Omarchy's update failed because `hyprland-guiutils` 0.2.2-4 requires
+`libhyprtoolkit.so=6-64`, while the held toolkit provides version 5.
+The original hold omitted this dependent package. Added `hyprland-guiutils`
+to the existing hold, retaining its installed version 0.2.2-3 and the three
+rollback versions above. The previous fragment is backed up at
+`/etc/pacman.d/omarchy-monitor-wake-hold.conf.bak-20261018T111926Z`.
+
+With the effective four-package hold, `pacman -Sup --noconfirm` now resolves
+the upgrade successfully and selects none of those packages. `pacman -Dk`
+reports no database errors. No packages were upgraded during this repair;
+rerun `omarchy update` to continue the update.
+
+The configured stable mirror's live index now offers the fixed Aquamarine
+release and compatible packages:
+
+| Package | Configured stable repository version |
+| --- | --- |
+| aquamarine | 0.15.1-1 |
+| hyprland | 0.56.2-4 |
+| hyprtoolkit | 0.6.0-1 |
+| hyprland-guiutils | 0.2.2-4 |
+
+The [0.15.1 release notes](https://github.com/hyprwm/aquamarine/releases/tag/v0.15.1)
+confirm the disconnect fix described above. A preview with the rollback hold
+removed also resolves successfully. The September 21 repository limitation
+has therefore cleared, but monitor wake with these versions remains untested
+on this machine.
+
+Later October 18, removed all four holds at David's request by removing the
+include from `/etc/pacman.conf` and deleting the unused fragment. Both files
+were backed up under
+`/var/lib/omarchy-monitor-rollback/unhold-20261018T112143Z/`.
+The effective `IgnorePkg` list is now empty. The actual upgrade preview
+resolves successfully and selects all four repository versions listed above;
+`pacman -Dk` still reports no database errors. Package installation, reboot,
+and monitor-wake testing remain pending.
+
 ## Removing the hold once fixed packages reach the configured repositories
 
 Once a fixed release and compatible packages reach the configured repositories:
@@ -132,7 +178,7 @@ Once a fixed release and compatible packages reach the configured repositories:
    `/etc/pacman.conf` (for example, with `sudoedit /etc/pacman.conf`).
 2. Delete that now-unused fragment with
    `sudo rm /etc/pacman.d/omarchy-monitor-wake-hold.conf`.
-3. Run `pacman-conf IgnorePkg` and confirm these three packages are no longer
+3. Run `pacman-conf IgnorePkg` and confirm these four packages are no longer
    held; preserve any unrelated holds added later.
 4. Run `omarchy update` to update the compatible package set together.
 5. Reboot, repeat the display/idle checks, and update this note with the fixed
