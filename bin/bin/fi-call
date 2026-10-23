@@ -1,0 +1,42 @@
+#!/bin/bash
+# Handle tel: links by opening Google Fi web calling with the number filled in.
+#
+# The Fi page takes no number in its URL, but its "To" field is autofocused, so
+# the number is put on the clipboard and pasted once the window appears. Typing
+# it with wtype scrambles the digits in Chrome. Enter is left to the user so a
+# stray link never places a call.
+
+set -euo pipefail
+
+url="https://messages.google.com/fiwebcalls/calls/new"
+window_title='^Google Fi Web calls$|fiwebcalls'
+paste_delay="${FI_CALL_PASTE_DELAY:-2.5}"
+
+uri="${1:-}"
+number="${uri#tel:}"
+number="${number%%[;?]*}"
+number="$(printf '%b' "${number//%/\\x}")"
+number="$(tr -cd '+0-9' <<<"$number")"
+
+fi_windows() {
+  hyprctl clients -j | jq -r --arg re "$window_title" '.[] | select((.title // "") | test($re)) | .address'
+}
+
+existing="$(fi_windows)"
+omarchy-launch-webapp "$url"
+
+[[ -n $number ]] || exit 0
+printf '%s' "$number" | wl-copy
+
+for _ in $(seq 50); do
+  window="$(fi_windows | grep -vxF -e "$existing" | head -n 1 || true)"
+  if [[ -n $window ]]; then
+    sleep "$paste_delay"
+    # Send the paste to the new window itself so it lands even if focus moved.
+    hyprctl dispatch "hl.dsp.send_shortcut({ mods = \"CTRL\", key = \"V\", window = \"address:$window\" })" >/dev/null
+    exit 0
+  fi
+  sleep 0.2
+done
+
+notify-send "Google Fi" "Number $number is on the clipboard"

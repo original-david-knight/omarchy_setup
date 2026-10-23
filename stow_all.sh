@@ -137,7 +137,9 @@ validate_bar_setup() {
       return 1
     }
     if [[ ! -d $source_plugin_dir && $plugin_id == jankeesvw.meeting-recorder ]]; then
-      source_plugin_dir=/usr/share/omarchy-meeting-recorder/plugin
+      # The recorder ships outside this repo, either packaged under /usr/share
+      # or linked from a source checkout; validate whatever is deployed.
+      source_plugin_dir=$(realpath -- "$plugin_dir")
     fi
     # Stow deliberately deploys symlinks, while the plugin validator rejects
     # symlinks inside its input folder. Validate the authoritative source copy.
@@ -287,6 +289,25 @@ if (( ! bar_only )); then
   configure_yazi
   HOME="$target_home" XDG_CONFIG_HOME="$target_home/.config" \
     xdg-mime default google-chrome.desktop x-scheme-handler/http x-scheme-handler/https text/html
+  # xdg-open splits Exec on whitespace without honoring quotes, so tel: links
+  # need an absolute path to the stowed fi-call helper.
+  mkdir -p "$target_home/.local/share/applications"
+  cat >"$target_home/.local/share/applications/fi-call.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Google Fi Call
+Comment=Call phone links through Google Fi web calling
+Exec=$target_home/bin/fi-call %u
+Terminal=false
+NoDisplay=true
+Icon=phone
+MimeType=x-scheme-handler/tel;
+EOF
+  # Chrome resolves tel: through the desktop portal, which only sees handlers
+  # listed in mimeinfo.cache.
+  update-desktop-database "$target_home/.local/share/applications"
+  HOME="$target_home" XDG_CONFIG_HOME="$target_home/.config" \
+    xdg-mime default fi-call.desktop x-scheme-handler/tel
   if [[ ${OMARCHY_SETUP_ACTIVATE:-1} == 1 && $resolved_target_home == "$(realpath -m -- "$HOME")" ]]; then
     bash "$repo_dir/activate.sh"
   fi

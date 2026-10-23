@@ -119,6 +119,12 @@ installs the Omarchy `theme-set` hook, generates the initial theme, reloads
 Hyprland, and restarts the portal. The hook regenerates
 `~/.config/yazi/theme.toml` from the active Omarchy theme's `colors.toml`.
 
+`tel:` links open Google Fi web calling through `bin/bin/fi-call`. The Fi page
+takes no number in its URL, so the helper copies the number and sends Ctrl+V to
+the new window; the user presses Enter to dial. `stow_all.sh` generates
+`fi-call.desktop` with an absolute `Exec` path, because xdg-open splits `Exec`
+on whitespace, and refreshes `mimeinfo.cache` so the desktop portal sees it.
+
 ## Beachview theme
 
 `themes/beachview/` is the custom Omarchy theme, a higher-contrast fork of
