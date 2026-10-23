@@ -19,7 +19,7 @@ o.bind(
   'uwsm-app -- xdg-terminal-exec --dir="$(omarchy-cmd-terminal-cwd)" tmux new'
 )
 
-o.bind("SUPER + PERIOD", "Mouse Keys", "mousekeys show")
+hl.unbind("SUPER + PERIOD") -- Was: Mouse Keys. Nodi binds this key.
 o.bind(
   "SUPER + E",
   "Yazi file manager",
