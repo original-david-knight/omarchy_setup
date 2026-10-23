@@ -41,7 +41,6 @@ o.window("^([Ss]potify|com\\.spotify\\.Client)$", {
   suppress_event = "activate",
 })
 o.window("^[sS]lack$", { workspace = "special:slack" })
-o.window("^(obsidian|md\\.obsidian\\.Obsidian)$", { workspace = "special:slack" })
 o.window("^code$", { workspace = "1" })
 o.window("^cursor$", { workspace = "1" })
 

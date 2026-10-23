@@ -1,12 +1,9 @@
 #!/bin/bash
-# Toggle Slack and Obsidian in special:slack workspace
+# Toggle Slack in special:slack workspace
 
 workspace="special:slack"
 workspace_name="slack"
 slack_class='^[sS]lack$'
-# Obsidian used the short class on older installs. Current Quattro packages use
-# the reverse-DNS application ID, so accept both when finding/routing windows.
-obsidian_class='^(obsidian|md\.obsidian\.Obsidian)$'
 
 find_window() {
     local class_regex=$1
@@ -59,23 +56,14 @@ move_window_to_special() {
     hyprctl dispatch "hl.dsp.window.move({ workspace = \"$workspace\", follow = false, window = \"address:$addr\" })" > /dev/null
 }
 
-arrange_apps() {
-    local ready=true
-
-    window_in_workspace "$slack_class" || move_window_to_special "$slack_class" || ready=false
-    window_in_workspace "$obsidian_class" || move_window_to_special "$obsidian_class" || ready=false
-
-    $ready
-}
-
 # Hiding takes precedence over app detection. This keeps the toggle responsive
-# even when one app is still starting, has closed, or changed its window class.
+# even when Slack is still starting or has closed.
 if special_workspace_visible; then
     toggle_special_workspace
     exit 0
 fi
 
-if window_in_workspace "$slack_class" && window_in_workspace "$obsidian_class"; then
+if window_in_workspace "$slack_class"; then
     toggle_special_workspace
     exit 0
 fi
@@ -84,12 +72,8 @@ if ! move_window_to_special "$slack_class"; then
     uwsm-app -- slack &
 fi
 
-if ! move_window_to_special "$obsidian_class"; then
-    uwsm-app -- obsidian &
-fi
-
 for _ in $(seq 1 20); do
-    if arrange_apps; then
+    if window_in_workspace "$slack_class" || move_window_to_special "$slack_class"; then
         show_special_workspace
         exit 0
     fi

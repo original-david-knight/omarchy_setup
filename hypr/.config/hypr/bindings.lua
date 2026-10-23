@@ -47,7 +47,7 @@ hl.unbind("SUPER + SHIFT + M") -- Was: Spotify launcher/focus.
 o.bind("SUPER + SHIFT + M", "Spotify workspace", home .. "/.config/omarchy/plugins/david.podcasts/spotify-window toggle")
 
 hl.unbind("SUPER + S") -- Was: Quattro scratchpad.
-o.bind("SUPER + S", "Slack + Obsidian", home .. "/bin/toggle-slack-obsidian")
+o.bind("SUPER + S", "Slack", home .. "/bin/toggle-slack")
 
 -- Screen agent and capture shortcuts.
 o.bind(
