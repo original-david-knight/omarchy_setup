@@ -107,6 +107,9 @@
           "id": "omarchy.monitor"
         },
         {
+          "id": "david.security"
+        },
+        {
           "id": "omarchy.power"
         }
       ]

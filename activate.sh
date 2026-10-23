@@ -15,6 +15,7 @@ for unit in primary-selection-sync.service voxtype.service omarchy-tailscale-rec
     systemctl --user start "$unit"
   fi
 done
+systemctl --user enable --now security-watch.timer
 if [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then
   hyprctl reload >/dev/null
   errors=$(hyprctl configerrors)

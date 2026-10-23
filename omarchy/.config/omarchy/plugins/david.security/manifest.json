@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "david.security",
+  "name": "Security watch",
+  "version": "1.0.0",
+  "author": "David Knight",
+  "license": "MIT",
+  "description": "Status of the nightly Claude Code security review: findings, mitigations taken, and anything that needs you.",
+  "kinds": ["bar-widget"],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Security watch",
+    "description": "Nightly security review status; turns red when something needs your attention.",
+    "category": "System",
+    "aliases": ["security", "cve", "vulnerabilities", "audit"],
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

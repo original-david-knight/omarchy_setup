@@ -97,6 +97,16 @@ battery.
 Its `headset` helper is dependency-free Python; `install_headset.sh` installs
 the udev rule that grants the seated user access. See `docs/headset-widget.md`.
 
+`security-watch` (`bin`) is a nightly security review by headless Claude Code.
+`security-watch.timer` (`desktop`, enabled by `activate.sh`) runs it at 04:00.
+It reviews announcements since the last successful check against an inventory
+of this machine, mitigates only what its action policy allows, and writes
+`~/.local/state/security-watch/status.json`. The wrapper, not the model,
+computes the level. The `david.security` widget, just before power in both
+layouts, reads that file and turns solid red on an alert. Do not start the
+service casually: it is a real Claude run with sudo. See
+`docs/security-watch.md`.
+
 `herdr` and `bin` must remain non-folded because those directories also hold
 runtime state or files owned outside this repository. The deployment script
 uses non-folding consistently for every package so profile changes and future

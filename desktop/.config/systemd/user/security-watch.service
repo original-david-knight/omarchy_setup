@@ -1,0 +1,20 @@
+# One nightly security review: `security-watch run` gathers an inventory, has
+# headless Claude Code review announcements since the last successful check,
+# mitigate only what the action policy allows, and writes status.json for the
+# david.security bar widget. security-watch.timer fires it at 04:00. See
+# docs/security-watch.md.
+[Unit]
+Description=Nightly security review by Claude Code
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Through a login shell, as morning-brief@.service: the user manager's PATH
+# carries none of ~/.local/bin (claude) or the mise shims. flock keeps a
+# manual run and a timer run from overlapping; -E 0 makes a run that finds
+# the lock taken a quiet no-op.
+ExecStart=/usr/bin/flock -n -E 0 %t/security-watch.lock /usr/bin/env bash -lc 'exec /usr/bin/env PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$HOME/go/bin:$PATH" "$HOME/bin/security-watch" run'
+# The model call is bounded at fifty minutes; inventory takes under one.
+TimeoutStartSec=60min
+Nice=10

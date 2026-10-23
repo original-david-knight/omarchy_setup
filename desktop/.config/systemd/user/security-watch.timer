@@ -1,0 +1,12 @@
+# Fires security-watch.service at 04:00 every night. Persistent, so a desk
+# asleep at 04:00 runs the review when it wakes; the review window starts at
+# the last successful check, so a late or repeated run covers no gap.
+[Unit]
+Description=Nightly security review at 04:00
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

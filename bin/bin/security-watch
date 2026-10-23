@@ -1,0 +1,436 @@
+#!/usr/bin/env python3
+"""Nightly security review of this machine by headless Claude Code.
+
+`security-watch run` gathers an inventory, asks Claude to review security
+announcements since the last successful check, and writes status.json for the
+david.security bar widget. `security-watch status` prints that file's summary.
+See docs/security-watch.md.
+"""
+import datetime as dt
+import json
+import os
+from pathlib import Path
+import shutil
+import signal
+import string
+import subprocess
+import sys
+
+SCHEMA_VERSION = 1
+SEVERITIES = ("critical", "high", "medium", "low")
+STATUSES = ("exploitable", "affected", "mitigated", "fixed", "not-affected")
+CLAUDE_TIMEOUT = 50 * 60
+INVENTORY_TIMEOUT = 180
+KEEP_RUNS = dt.timedelta(days=90)
+STAMP = "%Y%m%dT%H%M%SZ"
+REPO = Path(__file__).resolve().parents[2]
+
+INVENTORY = {
+    "kernel.txt": ["uname", "-a"],
+    "os-release.txt": ["cat", "/etc/os-release"],
+    "packages.txt": ["pacman", "-Q"],
+    "arch-audit.json": ["arch-audit", "--json"],
+    "arch-audit-upgradable.txt": ["arch-audit", "--upgradable", "--show-cve", "--color", "never"],
+    "checkupdates.txt": ["checkupdates"],
+    "listening.txt": ["ss", "-tulpn"],
+    "services.txt": ["systemctl", "list-units", "--type=service", "--state=running", "--no-pager", "--plain"],
+    "user-services.txt": ["systemctl", "--user", "list-units", "--type=service", "--state=running", "--no-pager", "--plain"],
+    "modules.txt": ["lsmod"],
+    "flatpak.txt": ["flatpak", "list", "--columns=application,version,branch,origin"],
+    "modprobe-security.txt": ["sh", "-c", 'for f in /etc/modprobe.d/security-*.conf; do [ -e "$f" ] && printf "== %s\\n%s\\n" "$f" "$(cat "$f")"; done; true'],
+    "sysctl.txt": ["sysctl", "kernel.unprivileged_userns_clone", "user.max_user_namespaces",
+                   "kernel.unprivileged_bpf_disabled", "kernel.yama.ptrace_scope", "kernel.kptr_restrict"],
+}
+
+_text = {"type": "string"}
+REVIEW_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["summary", "findings", "actions"],
+    "properties": {
+        "summary": _text,
+        "findings": {"type": "array", "items": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["id", "title", "severity", "status", "component", "detail", "youShould", "references"],
+            "properties": {
+                "id": _text, "title": _text, "component": _text, "detail": _text,
+                "severity": {"type": "string", "enum": list(SEVERITIES)},
+                "status": {"type": "string", "enum": list(STATUSES)},
+                "youShould": {"type": ["string", "null"]},
+                "references": {"type": "array", "items": _text},
+            },
+        }},
+        "actions": {"type": "array", "items": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["summary", "command", "revert"],
+            "properties": {"summary": _text, "command": _text, "revert": _text},
+        }},
+    },
+}
+
+PROMPT = string.Template("""\
+You are the nightly security reviewer for this machine: an Omarchy (Arch Linux)
+desktop owned by one developer, who runs untrusted code and autonomous coding
+agents on it. Your working directory is this run's directory.
+
+## Window
+$window
+
+## Inventory
+A deterministic inventory gathered moments ago is in ./inventory/: running
+kernel (`uname -a`; the kernel is a custom `-omarchy` build, so the Arch security
+tracker does not cover it), os-release, installed packages (`pacman -Q`),
+`arch-audit --json` (Arch tracker matches for installed packages),
+`arch-audit --upgradable` (those already fixed in the repos), `checkupdates`
+(pending upgrades), listening sockets, running services, loaded kernel modules,
+Flatpaks, existing `/etc/modprobe.d/security-*.conf` mitigations, and security
+sysctls. ./inventory/NOTES.txt lists any command that failed or was missing.
+Inspect the live system further with read-only commands when you need to.
+
+## Sources
+- Arch security tracker (https://security.archlinux.org/, and the JSON at
+  https://security.archlinux.org/issues/all.json).
+- CISA Known Exploited Vulnerabilities:
+  https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json
+- oss-security (https://www.openwall.com/lists/oss-security/).
+- Linux kernel channels: kernel.org releases, linux-cve-announce, and LKML
+  security reports, matched against the running `-omarchy` kernel version.
+- Omarchy channels: https://github.com/basecamp/omarchy releases and issues.
+- Browser vendor advisories for every installed browser (Chrome releases blog,
+  Chromium, Firefox, Brave).
+Use curl and jq in Bash for large feeds; never read a whole feed into context.
+Use WebSearch and WebFetch for news and advisories.
+
+## Carry forward
+The previous successful review's findings and actions follow. Re-check each one
+and carry still-open items forward with an updated status; drop items that are
+now fixed and no longer need attention.
+$previous
+
+## Existing mitigations
+Review each `/etc/modprobe.d/security-*.conf` file in the inventory. If the fix
+it waits for is now installed and booted, keep its finding with status `fixed`
+and set `youShould` to the exact steps for removing it. Otherwise keep it as
+`mitigated` with `youShould` null. $followup_note
+
+## ACTION POLICY
+Act only when ALL of these hold:
+1. Severity is critical, or high and actively exploited per CISA KEV or the vendor.
+2. This device runs an affected version.
+3. The vulnerable component is reachable here: a loaded module, a running or
+   listening service, an installed browser, or a local privilege escalation
+   (untrusted code and coding agents run on this machine).
+4. No fix is already in place.
+
+Allowed actions, most preferred first:
+- A full `sudo pacman -Syu --noconfirm`. Never a partial `pacman -Sy <pkg>`.
+- If the fix is not yet on the configured mirror, the vendor-signed package from
+  an official Arch mirror via `sudo pacman -U <url>` with signature checks on.
+- Block a kernel module with `/etc/modprobe.d/security-<id>.conf` containing
+  `install <module> /bin/false`, unload it if it is unused, and rebuild boot
+  images with `sudo limine-mkinitcpio`.
+- Stop and disable a vulnerable service.
+- A ufw deny rule.
+- A sysctl in `/etc/sysctl.d/90-security-<id>.conf`.
+
+Never: reboot, shut down or suspend; delete user data; touch credentials, keys or
+sudoers; uninstall packages; edit /usr/share/omarchy; git push; disable the
+firewall or updates; end the desktop session; act on medium or low severity.
+
+sudo is non-interactive here. Do not run interactive commands.
+
+Record every change you make in `actions` with the exact command you ran and the
+exact command that reverts it, and write `FOLLOWUP-<id>.md` in this directory
+explaining when and how to undo it. Anything that needs the user, such as
+rebooting into a fixed kernel, goes in that finding's `youShould`. Apart from
+allowed actions, stay read-only.
+
+## Output
+Write a human-readable `report.md` in this directory: what you checked, each
+finding with evidence and references, and any action taken.
+
+Then return the structured result:
+- `summary`: one line for a status bar tooltip.
+- `findings`: every relevant advisory affecting this machine, plus carried-forward
+  items. `status` is one of exploitable (affected and reachable, not mitigated),
+  affected (vulnerable version installed but not reachable or not urgent),
+  mitigated, fixed, not-affected. `youShould` is a concrete instruction for the
+  user, or null when nothing is needed from them. Keep `youShould` null for
+  routine pending updates that the normal update flow will handle.
+- `actions`: changes you made this run, or an empty list.
+""")
+
+
+class ReviewError(Exception):
+    pass
+
+
+def now_utc():
+    return dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+
+
+def iso(moment):
+    return moment.isoformat().replace("+00:00", "Z")
+
+
+def state_dir():
+    base = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local/state")
+    return Path(base) / "security-watch"
+
+
+def level(findings, actions):
+    if actions or any(f["status"] == "exploitable" or f["youShould"] for f in findings):
+        return "alert"
+    if any(f["status"] == "affected" for f in findings):
+        return "notice"
+    return "clear"
+
+
+def _fields(raw, where, spec):
+    if not isinstance(raw, dict):
+        raise ReviewError(f"{where} is not an object")
+    unknown = set(raw) - set(spec)
+    if unknown:
+        raise ReviewError(f"{where} has unknown fields {sorted(unknown)}")
+    out = {}
+    for name, check in spec.items():
+        if name not in raw:
+            raise ReviewError(f"{where} is missing {name}")
+        out[name] = check(raw[name], f"{where}.{name}")
+    return out
+
+
+def _str(value, where):
+    if not isinstance(value, str):
+        raise ReviewError(f"{where} is not a string")
+    return value
+
+
+def _enum(choices):
+    def check(value, where):
+        if value not in choices:
+            raise ReviewError(f"{where} is {value!r}, not one of {', '.join(choices)}")
+        return value
+    return check
+
+
+def _optional_str(value, where):
+    if value is None:
+        return None
+    return _str(value, where).strip() or None
+
+
+def _list(item):
+    def check(value, where):
+        if not isinstance(value, list):
+            raise ReviewError(f"{where} is not a list")
+        return [item(entry, f"{where}[{i}]") for i, entry in enumerate(value)]
+    return check
+
+
+def _finding(raw, where):
+    return _fields(raw, where, {
+        "id": _str, "title": _str, "component": _str, "detail": _str,
+        "severity": _enum(SEVERITIES), "status": _enum(STATUSES),
+        "youShould": _optional_str, "references": _list(_str),
+    })
+
+
+def _action(raw, where):
+    return _fields(raw, where, {"summary": _str, "command": _str, "revert": _str})
+
+
+def parse_review(envelope):
+    """The model's reply, validated into {summary, findings, actions}."""
+    if not isinstance(envelope, dict):
+        raise ReviewError("claude output is not a JSON object")
+    if envelope.get("is_error") or envelope.get("subtype") != "success":
+        detail = str(envelope.get("result") or envelope.get("subtype") or "unknown error")
+        raise ReviewError(f"claude reported an error: {detail[:300]}")
+    if "structured_output" not in envelope:
+        raise ReviewError("claude output has no structured_output")
+    review = _fields(envelope["structured_output"], "review", {
+        "summary": _str, "findings": _list(_finding), "actions": _list(_action),
+    })
+    review["summary"] = " ".join(review["summary"].split())
+    return review
+
+
+def read_status(path):
+    try:
+        status = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    return status if isinstance(status, dict) and status.get("schema") == SCHEMA_VERSION else None
+
+
+def write_status(path, run, result):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps({"schema": SCHEMA_VERSION, "run": run, "result": result}, indent=2) + "\n")
+    tmp.replace(path)
+
+
+def gather_inventory(directory):
+    directory.mkdir(parents=True, exist_ok=True)
+    notes = []
+    for name, argv in INVENTORY.items():
+        if shutil.which(argv[0]) is None:
+            notes.append(f"{name}: {argv[0]} is not installed")
+            continue
+        try:
+            done = subprocess.run(argv, capture_output=True, text=True, timeout=INVENTORY_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            notes.append(f"{name}: timed out after {INVENTORY_TIMEOUT}s")
+            continue
+        (directory / name).write_text(done.stdout)
+        if done.returncode != 0:
+            # checkupdates exits 2 when nothing is pending, so a nonzero exit is a note, not a failure.
+            notes.append(f"{name}: exit {done.returncode}: {done.stderr.strip()[-500:]}")
+    (directory / "NOTES.txt").write_text("\n".join(notes) + "\n" if notes else "All inventory commands succeeded.\n")
+
+
+def build_prompt(previous):
+    if previous:
+        window = (f"Review security announcements published since {previous['checkedAt']} "
+                  "(the last successful check) up to now.")
+        carried = json.dumps({"findings": previous["findings"], "actions": previous["actions"]}, indent=2)
+    else:
+        window = ("This is the first review. Cover every currently unfixed advisory that affects "
+                  "installed versions, plus security announcements from the last 30 days.")
+        carried = "There is no previous review."
+    followup = REPO / "SECURITY-MITIGATION-FOLLOWUP.md"
+    note = (f"{followup} documents one such mitigation (ZDI-CAN-33367) and is the style to follow "
+            "for FOLLOWUP files." if followup.is_file() else "")
+    return PROMPT.substitute(window=window, previous=carried, followup_note=note)
+
+
+def ask_claude(prompt, run_dir):
+    argv = ["claude", "-p", "--model", "opus", "--permission-mode", "bypassPermissions",
+            "--output-format", "json", "--json-schema", json.dumps(REVIEW_SCHEMA)]
+    try:
+        done = subprocess.run(argv, input=prompt, cwd=run_dir, capture_output=True, text=True,
+                              timeout=CLAUDE_TIMEOUT)
+    except FileNotFoundError:
+        raise ReviewError("claude is not on PATH")
+    except subprocess.TimeoutExpired:
+        raise ReviewError(f"claude did not finish within {CLAUDE_TIMEOUT // 60} minutes")
+    (run_dir / "claude.json").write_text(done.stdout)
+    if done.returncode != 0:
+        raise ReviewError(f"claude exited {done.returncode}: {(done.stderr or done.stdout).strip()[-300:]}")
+    try:
+        return json.loads(done.stdout)
+    except ValueError:
+        raise ReviewError("claude output is not JSON")
+
+
+def ensure_report(run_dir, review):
+    report = run_dir / "report.md"
+    if not report.is_file():
+        lines = ["# Security review", "", review["summary"], ""]
+        lines += [f"- **{f['severity']} / {f['status']}** {f['title']} ({f['component']}): {f['detail']}"
+                  for f in review["findings"]]
+        report.write_text("\n".join(lines) + "\n")
+    return str(report)
+
+
+def notify_alert(summary):
+    try:
+        subprocess.run(["notify-send", "-u", "critical", "-a", "Security watch", "Security watch", summary],
+                       capture_output=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
+def prune_runs(runs, now, current):
+    for entry in runs.iterdir():
+        try:
+            started = dt.datetime.strptime(entry.name, STAMP).replace(tzinfo=dt.timezone.utc)
+        except ValueError:
+            continue
+        if now - started > KEEP_RUNS and entry != current:
+            shutil.rmtree(entry, ignore_errors=True)
+
+
+def _terminate(signum, frame):
+    raise ReviewError(f"stopped by signal {signum}")
+
+
+def run():
+    signal.signal(signal.SIGTERM, _terminate)
+    root = state_dir()
+    status_path = root / "status.json"
+    prior = read_status(status_path)
+    previous = prior["result"] if prior else None
+    # checkedAt is the start time, so announcements published during a run fall
+    # inside the next window instead of a gap.
+    started = now_utc()
+    run_dir = root / "runs" / started.strftime(STAMP)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    run_state = {"state": "running", "startedAt": iso(started), "finishedAt": None,
+                 "error": None, "dir": str(run_dir)}
+    write_status(status_path, run_state, previous)
+    try:
+        gather_inventory(run_dir / "inventory")
+        review = parse_review(ask_claude(build_prompt(previous), run_dir))
+        result = {
+            "checkedAt": iso(started),
+            "since": previous["checkedAt"] if previous else None,
+            "level": level(review["findings"], review["actions"]),
+            **review,
+            "report": ensure_report(run_dir, review),
+        }
+    except Exception as error:
+        run_state.update(state="failed", finishedAt=iso(now_utc()), error=str(error) or type(error).__name__)
+        write_status(status_path, run_state, previous)
+        print(f"security-watch: {run_state['error']}", file=sys.stderr)
+        return 1
+    run_state.update(state="done", finishedAt=iso(now_utc()))
+    write_status(status_path, run_state, result)
+    if result["level"] == "alert":
+        notify_alert(result["summary"])
+    prune_runs(root / "runs", started, run_dir)
+    print(f"{result['level']}: {result['summary']}")
+    return 0
+
+
+def age(stamp, now):
+    seconds = (now - dt.datetime.fromisoformat(stamp.replace("Z", "+00:00"))).total_seconds()
+    hours = seconds / 3600
+    return f"{int(seconds // 60)} min ago" if hours < 1 else f"{hours:.0f} h ago" if hours < 48 else f"{hours / 24:.0f} days ago"
+
+
+def status():
+    current = read_status(state_dir() / "status.json")
+    if current is None:
+        print("No security review has run yet.")
+        return 0
+    now = now_utc()
+    run_state, result = current["run"], current["result"]
+    if result:
+        print(f"{result['level']}: {result['summary']}")
+        print(f"checked {result['checkedAt']} ({age(result['checkedAt'], now)}), "
+              f"{len(result['findings'])} findings, {len(result['actions'])} actions")
+        for finding in result["findings"]:
+            if finding["youShould"]:
+                print(f"you should ({finding['id']}): {finding['youShould']}")
+        print(f"report: {result['report']}")
+    else:
+        print("No successful review yet.")
+    line = f"last run: {run_state['state']}, started {run_state['startedAt']}"
+    print(line + (f": {run_state['error']}" if run_state.get("error") else ""))
+    return 0
+
+
+def main(argv):
+    commands = {"run": run, "status": status}
+    if len(argv) != 2 or argv[1] not in commands:
+        print("usage: security-watch run|status", file=sys.stderr)
+        return 2
+    return commands[argv[1]]()
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
