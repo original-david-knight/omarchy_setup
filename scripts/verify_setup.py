@@ -68,7 +68,7 @@ def verify(checks, home):
         for plugin in sorted(set(i for i in ids if i.startswith("david."))):
             checks.command(plugin + " plugin", ["omarchy", "plugin", "validate", ROOT / "omarchy/.config/omarchy/plugins" / plugin])
         if "jankeesvw.meeting-recorder" in ids:
-            checks.command("meeting recorder plugin", ["omarchy", "plugin", "validate", "/usr/share/omarchy-meeting-recorder/plugin"])
+            checks.command("meeting recorder plugin", ["omarchy", "plugin", "validate", Path.home() / "workspace/omarchy-meeting-recorder/plugin"])
     except (OSError, ValueError, KeyError):
         checks.check("bar layout", False, "run ./stow_all.sh")
     for command, expected, label in [(["xdg-mime", "query", "default", "x-scheme-handler/https"], "google-chrome.desktop", "default browser"), (["xdg-mime", "query", "default", "inode/directory"], "yazi.desktop", "default file manager")]:

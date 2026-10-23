@@ -25,6 +25,12 @@ the link is ready. It is safe to run again. It refuses to replace a different
 file, directory, or symlink using the same plugin ID. If the shell does not
 pick up the plugin automatically, run `omarchy restart shell`.
 
+Meeting Recorder itself comes from David's fork, cloned to
+`~/workspace/omarchy-meeting-recorder` by `install_meeting_recorder.sh`, which
+builds it with Cargo and installs the binary in `~/.local/bin`. `stow_all.sh`
+links the checkout's `plugin/` as `jankeesvw.meeting-recorder`. Rerun the
+installer after changing the checkout.
+
 ## What the panel shows
 
 The meeting section uses the existing authenticated `/api/today` feed from

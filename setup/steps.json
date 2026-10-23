@@ -166,9 +166,6 @@
       "id": "install_meeting_recorder",
       "label": "Install Meeting Recorder",
       "script": "install_meeting_recorder.sh",
-      "inputs": [
-        "packaging/meeting-recorder"
-      ],
       "requires": [
         "public.check_baseline",
         "public.update_omarchy"

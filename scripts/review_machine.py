@@ -36,7 +36,7 @@ def main():
             if plugin.startswith("david."):
                 source = ROOT / "omarchy/.config/omarchy/plugins" / plugin
             elif plugin == "jankeesvw.meeting-recorder":
-                source = Path("/usr/share/omarchy-meeting-recorder/plugin")
+                source = Path.home() / "workspace/omarchy-meeting-recorder/plugin"
             else:
                 continue
             if not (source / "manifest.json").is_file():

@@ -137,8 +137,7 @@ validate_bar_setup() {
       return 1
     }
     if [[ ! -d $source_plugin_dir && $plugin_id == jankeesvw.meeting-recorder ]]; then
-      # The recorder ships outside this repo, either packaged under /usr/share
-      # or linked from a source checkout; validate whatever is deployed.
+      # The recorder plugin lives in its own checkout; validate what is deployed.
       source_plugin_dir=$(realpath -- "$plugin_dir")
     fi
     # Stow deliberately deploys symlinks, while the plugin validator rejects
@@ -260,8 +259,10 @@ for package in "${shared_packages[@]}"; do
   stow_package "$package"
 done
 
-recorder_plugin=/usr/share/omarchy-meeting-recorder/plugin
+# install_meeting_recorder.sh builds the recorder from this checkout.
+recorder_plugin="$target_home/workspace/omarchy-meeting-recorder/plugin"
 if [[ -d $recorder_plugin ]]; then
+  recorder_plugin=$(realpath -- "$recorder_plugin")
   recorder_target="$target_home/.config/omarchy/plugins/jankeesvw.meeting-recorder"
   if [[ -e $recorder_target || -L $recorder_target ]] && [[ $(realpath -m -- "$recorder_target") != "$recorder_plugin" ]]; then
     backup_target ".config/omarchy/plugins/jankeesvw.meeting-recorder"
