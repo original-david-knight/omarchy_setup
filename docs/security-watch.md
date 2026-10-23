@@ -41,29 +41,39 @@ the prompt sends Claude to kernel and Omarchy channels for it.
 
 ## Action policy
 
-Claude acts only when all of these hold:
+The default is to report, not to act. An `exploitable` finding with a
+`youShould` already turns the widget red, so Claude changes the system only
+when waiting for you to read that is itself the danger. It acts only when all
+of these hold, each confirmed from primary sources rather than one news story:
 
-- Severity is critical, or high and actively exploited per CISA KEV or the
-  vendor.
-- This device runs an affected version.
+- Severity is critical, or high and listed in CISA KEV.
+- It is exploited in the wild, or a working public exploit exists. A severity
+  score alone is not enough.
+- This device runs an affected version, checked against the installed package
+  or running kernel.
 - The vulnerable component is reachable here: a loaded module, a running or
   listening service, an installed browser, or a local privilege escalation.
   Untrusted code and coding agents run on this machine, so local escalation
   counts.
-- No fix is already in place.
+- No fix or mitigation is already in place.
+- The change is reversible and breaks nothing in use. A mitigation that would
+  disable browser sandboxes, Flatpak, containers, VMs, networking, audio or the
+  display is reported instead.
 
-Allowed actions, most preferred first:
+Any uncertain condition means no action and a `youShould` instead.
 
-- A full `sudo pacman -Syu --noconfirm`, never a partial `-Sy <pkg>`.
-- If the fix has not reached the configured mirror, the vendor-signed package
-  from an official Arch mirror via `sudo pacman -U <url>` with signature checks
-  on.
+Allowed actions, smallest and most reversible first, one change per finding:
+
 - Blocking a kernel module in `/etc/modprobe.d/security-<id>.conf`
   (`install <module> /bin/false`), unloading it if unused, and rebuilding boot
   images with `sudo limine-mkinitcpio`.
-- Stopping and disabling a vulnerable service.
+- Stopping and disabling a vulnerable service that nothing depends on.
 - A ufw deny rule.
 - A sysctl in `/etc/sysctl.d/90-security-<id>.conf`.
+- The vendor-signed fixed package via `sudo pacman -U <url>` from an official
+  Arch mirror with signature checks on, or a full `sudo pacman -Syu
+  --noconfirm` when no narrower mitigation exists. Never a partial
+  `-Sy <pkg>`.
 
 Never: reboot, shut down or suspend; delete user data; touch credentials, keys
 or sudoers; uninstall packages; edit `/usr/share/omarchy`; `git push`; disable

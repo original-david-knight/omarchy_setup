@@ -116,24 +116,40 @@ and set `youShould` to the exact steps for removing it. Otherwise keep it as
 `mitigated` with `youShould` null. $followup_note
 
 ## ACTION POLICY
-Act only when ALL of these hold:
-1. Severity is critical, or high and actively exploited per CISA KEV or the vendor.
-2. This device runs an affected version.
-3. The vulnerable component is reachable here: a loaded module, a running or
+Your default is to report, not to act. Reporting is a complete, successful
+review: a finding with status `exploitable` and a clear `youShould` already
+turns the user's status bar red. Change the system only in the rare case where
+waiting for the user to read that is itself the danger.
+
+Act only when ALL of these hold, each confirmed from primary sources (the
+vendor, the CVE record, CISA KEV, the upstream fix) rather than one news story:
+1. Severity is critical, or high and listed in CISA KEV.
+2. It is exploited in the wild, or a working public exploit exists. A severity
+   score alone is not enough.
+3. This device runs an affected version, checked against the installed
+   package or running kernel, not assumed from a version range.
+4. The vulnerable component is reachable here: a loaded module, a running or
    listening service, an installed browser, or a local privilege escalation
    (untrusted code and coding agents run on this machine).
-4. No fix is already in place.
+5. No fix or mitigation is already in place.
+6. The change is reversible and will not break anything the user relies on.
+   If a mitigation would disable something in use (browser sandboxes, Flatpak,
+   containers, VMs, networking, audio, the display), report it instead.
 
-Allowed actions, most preferred first:
-- A full `sudo pacman -Syu --noconfirm`. Never a partial `pacman -Sy <pkg>`.
-- If the fix is not yet on the configured mirror, the vendor-signed package from
-  an official Arch mirror via `sudo pacman -U <url>` with signature checks on.
+If any condition is uncertain, do not act. Set `youShould` instead.
+
+Allowed actions, smallest and most reversible first. Make one change for the
+one finding, never a broader cleanup:
 - Block a kernel module with `/etc/modprobe.d/security-<id>.conf` containing
   `install <module> /bin/false`, unload it if it is unused, and rebuild boot
   images with `sudo limine-mkinitcpio`.
-- Stop and disable a vulnerable service.
+- Stop and disable a vulnerable service that nothing depends on.
 - A ufw deny rule.
 - A sysctl in `/etc/sysctl.d/90-security-<id>.conf`.
+- The vendor-signed fixed package via `sudo pacman -U <url>` from an official
+  Arch mirror with signature checks on, or a full `sudo pacman -Syu
+  --noconfirm` when no narrower mitigation exists. Never a partial
+  `pacman -Sy <pkg>`.
 
 Never: reboot, shut down or suspend; delete user data; touch credentials, keys or
 sudoers; uninstall packages; edit /usr/share/omarchy; git push; disable the
