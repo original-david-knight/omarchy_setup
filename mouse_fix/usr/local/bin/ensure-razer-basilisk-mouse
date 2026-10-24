@@ -3,13 +3,14 @@
 set -euo pipefail
 
 # The Basilisk occasionally fails USB enumeration on cold boot until its
-# downstream hub is recycled. These paths match the current stable topology:
-#   7-2     upstream Genesys hub
-#   7-2.1   downstream Genesys hub with mouse/webcam/mic
-#   7-2.1.1 Razer Basilisk V3
-ROOT_HUB_PATH="${ROOT_HUB_PATH:-7-2}"
-SUB_HUB_PATH="${SUB_HUB_PATH:-7-2.1}"
-MOUSE_PATH="${MOUSE_PATH:-7-2.1.1}"
+# downstream hub is recycled. Defaults match the current wiring; override
+# ROOT_HUB_PATH if the hub moves to another computer port.
+#   7-1     upstream Genesys hub
+#   7-1.1   downstream Genesys hub with mouse/webcam/mic
+#   7-1.1.1 Razer Basilisk V3 35K
+ROOT_HUB_PATH="${ROOT_HUB_PATH:-7-1}"
+SUB_HUB_PATH="${SUB_HUB_PATH:-${ROOT_HUB_PATH}.1}"
+MOUSE_PATH="${MOUSE_PATH:-${SUB_HUB_PATH}.1}"
 USB_DRIVER_DIR="/sys/bus/usb/drivers/usb"
 BOOT_WAIT_SECONDS="${BOOT_WAIT_SECONDS:-15}"
 POST_RESET_WAIT_SECONDS="${POST_RESET_WAIT_SECONDS:-6}"
