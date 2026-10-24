@@ -296,6 +296,12 @@
       "id": "install_mouse_fix",
       "label": "Configure mouse recovery",
       "script": "install_mouse_fix.sh",
+      "profile_sensitive": true,
+      "inputs": [
+        "install_mouse_fix.sh",
+        "scripts/setup_profile.sh",
+        "mouse_fix"
+      ],
       "requires": [
         "public.check_baseline",
         "public.update_omarchy"
