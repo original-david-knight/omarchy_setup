@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""Make the Herdr desktop app look like herdr running in Ghostty.
+
+The herdr TUI inherits Ghostty's font and the Omarchy palette for free; the
+desktop app draws its own terminals. This copies Ghostty's font family and
+size into ~/.config/herdr-app/settings.json and writes the active Omarchy
+theme's terminal palette to themes/omarchy.json. stow_all.sh runs it, and the
+Omarchy theme-set hook reruns it so theme changes follow.
+"""
+
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+home = Path.home()
+config_home = Path(os.environ.get("XDG_CONFIG_HOME", home / ".config"))
+app_home = config_home / "herdr-app"
+ghostty_config = config_home / "ghostty" / "config"
+theme_dir = home / ".local" / "state" / "omarchy" / "current" / "theme"
+
+# Ghostty sizes fonts in points at 96 dpi; Herdr sizes them in pixels.
+POINTS_TO_PIXELS = 96 / 72
+# Terminal pixels per unit of panel zoom: 42.67 px terminals give 2x panels.
+PANEL_ZOOM_DIVISOR = 21.33
+
+
+def read_pairs(path):
+    """Return `key = value` lines as (key, value) pairs, keeping repeats."""
+    pairs = []
+    for line in path.read_text().splitlines():
+        # Hex colors start with `#`, so only a `#` after whitespace begins a comment.
+        match = re.match(r'\s*([\w-]+)\s*=\s*(.*?)(?:\s+#.*)?$', line)
+        if match:
+            pairs.append((match.group(1), match.group(2).strip().strip('"')))
+    return pairs
+
+
+def write_json(path, data):
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(json.dumps(data, indent=2) + "\n")
+    tmp.replace(path)
+
+
+def palette_theme():
+    ghostty_theme = theme_dir / "ghostty.conf"
+    if not ghostty_theme.is_file():
+        return None
+    values = {}
+    ansi = {}
+    for key, value in read_pairs(ghostty_theme):
+        if key == "palette":
+            index, _, color = value.partition("=")
+            ansi[int(index)] = color
+        else:
+            values[key] = value
+    if sorted(ansi) != list(range(16)):
+        return None
+    theme = {
+        "background": values["background"],
+        "foreground": values["foreground"],
+        "selection": values.get("selection-background", ansi[8]),
+        "cursor": values.get("cursor-color", values["foreground"]),
+        "ansi": [ansi[i] for i in range(16)],
+    }
+    colors_toml = theme_dir / "colors.toml"
+    if colors_toml.is_file():
+        accent = dict(read_pairs(colors_toml)).get("accent")
+        if accent:
+            theme["colors"] = {"accent": accent}
+    return theme
+
+
+def main():
+    app_home.mkdir(parents=True, exist_ok=True)
+    settings_path = app_home / "settings.json"
+    settings = json.loads(settings_path.read_text()) if settings_path.is_file() else {}
+
+    if ghostty_config.is_file():
+        ghostty = dict(read_pairs(ghostty_config))
+        if ghostty.get("font-family"):
+            settings["font"] = ghostty["font-family"]
+        if ghostty.get("font-size"):
+            # Panel text sizes are fixed in Herdr's mods and only follow `zoom`,
+            # which also scales terminals. Zoom the panels up with large
+            # terminal fonts, then divide the zoom back out of the terminal size.
+            pixels = float(ghostty["font-size"]) * POINTS_TO_PIXELS
+            zoom = max(1.0, round(pixels / PANEL_ZOOM_DIVISOR * 20) / 20)
+            settings["zoom"] = zoom
+            settings["font_size"] = round(pixels / zoom, 2)
+
+    theme = palette_theme()
+    if theme:
+        (app_home / "themes").mkdir(exist_ok=True)
+        write_json(app_home / "themes" / "omarchy.json", theme)
+        settings["theme"] = "omarchy"
+    else:
+        print(f"No complete Omarchy terminal palette in {theme_dir}; Herdr keeps its theme.", file=sys.stderr)
+
+    write_json(settings_path, settings)
+
+
+if __name__ == "__main__":
+    main()

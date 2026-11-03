@@ -201,6 +201,21 @@ configure_yazi() {
   fi
 }
 
+configure_herdr_app() {
+  local sync_script="$target_home/bin/sync-herdr-app-config"
+
+  if [[ ! -x $sync_script ]]; then
+    echo "Herdr app sync helper was not stowed: $sync_script" >&2
+    exit 1
+  fi
+
+  # The Herdr desktop app draws its own terminals, so copy Ghostty's font and
+  # the active Omarchy palette into it now and after every theme change.
+  HOME="$target_home" XDG_CONFIG_HOME="$target_home/.config" \
+    omarchy hook install theme-set "$sync_script"
+  HOME="$target_home" XDG_CONFIG_HOME="$target_home/.config" "$sync_script"
+}
+
 install_theme() {
   local source="$repo_dir/themes/beachview"
   local themes_dir="$target_home/.config/omarchy/themes"
@@ -253,7 +268,7 @@ unstow_package omarchy_laptop
 
 shared_packages=(omarchy)
 if (( ! bar_only )); then
-  shared_packages=(bash tmux zellij herdr omarchy hypr starship bin vscode yazi desktop)
+  shared_packages=(bash tmux zellij herdr herdr_app omarchy hypr starship bin vscode yazi desktop)
 fi
 for package in "${shared_packages[@]}"; do
   stow_package "$package"
@@ -288,6 +303,7 @@ if (( ! bar_only )); then
   install_theme
   select_theme
   configure_yazi
+  configure_herdr_app
   HOME="$target_home" XDG_CONFIG_HOME="$target_home/.config" \
     xdg-mime default google-chrome.desktop x-scheme-handler/http x-scheme-handler/https text/html
   # xdg-open splits Exec on whitespace without honoring quotes, so tel: links

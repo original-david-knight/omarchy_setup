@@ -39,7 +39,7 @@ for plain output.
 
 ## Stow packages
 
-Shared packages are `bash`, `tmux`, `zellij`, `herdr`, `omarchy`, `hypr`,
+Shared packages are `bash`, `tmux`, `zellij`, `herdr`, `herdr_app`, `omarchy`, `hypr`,
 `starship`, `ssh`, `bin`, `vscode`, and `yazi`.
 
 The selected machine profile adds:
@@ -176,6 +176,28 @@ tmux session, tab = tmux window, and prefix = `Ctrl-j`. Pane focus uses
 prefix then `Shift-h/j/k/l` for left/down/up/right; closing a workspace uses
 prefix then `Ctrl-k`. Multi-key operations run `~/bin/herdr-tmux`, which drives
 herdr's socket API.
+
+The Herdr desktop app (`herdr-app`, configured in `~/.config/herdr-app/`) is
+separate from the TUI and has no prefix key of its own. `herdr_app/` stows its
+`keys.json`, which repeats the TUI bindings as `ctrl-j <key>` chords plus the
+direct `alt-` keys. Actions with no app command (resize, tab reordering, pane
+cycling, theme cycling) are left out. So is copy mode (`ctrl-j [`): the app
+cannot scroll a terminal from the keyboard, only with the mouse wheel
+(herdrdev/herdr-app#160). `bin/bin/sync-herdr-app-config` copies
+Ghostty's font family and size (pt converted to px) into the app's
+`settings.json`. Herdr's sidebar text only grows with `zoom`, so the script
+sets `zoom` to the terminal px divided by 21.33 (never below 1) and divides it back
+out of the terminal `font_size`; the desktop gets 2. It also writes the active Omarchy palette to
+`themes/omarchy.json`. `stow_all.sh` runs it and installs it as a `theme-set`
+hook. The app reloads these files live; `herdr-app status` reports file errors.
+
+Hyprland's Ctrl+media-Next and Shift+media-Next keys (next workspace, next
+agent) run `herdr-tmux`. While a `herdr-app` window is open, it sends them to the
+app (`herdr-app do space.next` / `agent.next`), because the app's spaces live in
+herdr-core rather than the TUI server. Runs from TUI keybindings, which set
+`HERDR_ACTIVE_*`, always stay on the TUI. While the Claude desktop app
+(`com.anthropic.Claude`) has focus, Shift+media-Next instead sends the app's
+next-session shortcut, Ctrl+Shift+].
 
 `herdr config check` only validates TOML syntax. For behavioral testing, use a
 scratch session:

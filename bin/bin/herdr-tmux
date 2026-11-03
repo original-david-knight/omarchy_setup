@@ -14,6 +14,10 @@ built-in action at all. This covers the gap by talking to the herdr socket API:
 
 Run from a herdr keybinding, HERDR_ACTIVE_* is set and used to scope the action;
 run from a plain shell it falls back to whatever herdr currently has focused.
+
+Hyprland's global keys also run `workspace` and `agent`. The Herdr desktop app
+keeps its own spaces and agents in herdr-core rather than the herdr server, so
+while an app window is open those two go to `herdr-app do` instead.
 """
 
 import json
@@ -24,6 +28,9 @@ import subprocess
 import sys
 
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", "herdr")
+
+# Hyprland window class of the Herdr desktop app.
+APP_CLASS = "herdr-app"
 
 # Built-in theme names, in the order `theme cycle` walks them.
 THEMES = [
@@ -146,9 +153,32 @@ def cmd_tab(args):
         die("unknown tab action: " + action)
 
 
+def app_window_open():
+    try:
+        result = subprocess.run(["hyprctl", "clients", "-j"], capture_output=True,
+                                text=True, check=True)
+        clients = json.loads(result.stdout)
+    except (OSError, subprocess.CalledProcessError, ValueError):
+        return False
+    return any(client.get("class") == APP_CLASS for client in clients)
+
+
+def run_in_app(command):
+    """Send command to the Herdr desktop app when a global key, not herdr, ran us."""
+    # A herdr keybinding exports HERDR_ACTIVE_*, so that run belongs to the TUI.
+    if os.environ.get("HERDR_ACTIVE_WORKSPACE_ID") or not app_window_open():
+        return False
+    result = subprocess.run(["herdr-app", "do", command], capture_output=True, text=True)
+    if result.returncode != 0:
+        die("herdr-app do %s: %s" % (command, result.stderr.strip() or result.stdout.strip()))
+    return True
+
+
 def cmd_workspace(args):
     if not args or args[0] not in ("next", "prev"):
         die("workspace needs next|prev")
+    if run_in_app("space." + args[0]):
+        return
     workspaces = call("workspace.list")["workspaces"]
     if not workspaces:
         return
@@ -160,6 +190,8 @@ def cmd_workspace(args):
 def cmd_agent(args):
     if args != ["next"]:
         die("agent needs next")
+    if run_in_app("agent.next"):
+        return
     agents = call("agent.list")["agents"]
     if not agents:
         return

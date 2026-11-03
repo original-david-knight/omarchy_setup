@@ -77,8 +77,23 @@ o.bind("code:165", "Previous track", "omarchy-shell media previous", { locked = 
 -- Ctrl + the media Next key cycles Herdr workspaces, including the custom keycode.
 o.bind("CTRL + XF86AudioNext", "Next Herdr workspace", home .. "/bin/herdr-tmux workspace next")
 o.bind("CTRL + code:163", "Next Herdr workspace", home .. "/bin/herdr-tmux workspace next")
-o.bind("SHIFT + XF86AudioNext", "Next Herdr agent", home .. "/bin/herdr-tmux agent next")
-o.bind("SHIFT + code:163", "Next Herdr agent", home .. "/bin/herdr-tmux agent next")
+-- Shift + media Next cycles Herdr agents, or sessions while the Claude desktop
+-- app has focus. Ctrl + Shift + ] is the app's own next-session shortcut; the
+-- down/up split follows Omarchy's default/hypr/bindings/clipboard.lua.
+local function next_agent_or_claude_session()
+  local window = hl.get_active_window()
+  if window and window.class == "com.anthropic.Claude" then
+    local key = { mods = "CTRL SHIFT", key = "bracketright" }
+    hl.dispatch(hl.dsp.send_key_state({ mods = key.mods, key = key.key, state = "down" }))
+    hl.timer(function()
+      hl.dispatch(hl.dsp.send_key_state({ mods = key.mods, key = key.key, state = "up" }))
+    end, { timeout = 50, type = "oneshot" })
+  else
+    hl.exec_cmd(home .. "/bin/herdr-tmux agent next")
+  end
+end
+o.bind("SHIFT + XF86AudioNext", "Next Herdr agent or Claude session", next_agent_or_claude_session)
+o.bind("SHIFT + code:163", "Next Herdr agent or Claude session", next_agent_or_claude_session)
 hl.unbind("XF86AudioPause") -- Was: Omarchy media play/pause.
 hl.unbind("XF86AudioPlay") -- Was: Omarchy media play/pause.
 o.bind("XF86AudioPause", "Play/pause", home .. "/bin/media-play-pause", { locked = true })
