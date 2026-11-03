@@ -26,6 +26,11 @@ Panel {
   readonly property var findings: result ? sortedFindings(result.findings) : []
   readonly property var todo: findings.filter(function(finding) { return Boolean(finding.youShould) })
   readonly property var actions: result ? result.actions : []
+  // A run killed without its SIGTERM handler stays "running" in status.json.
+  // Past the service's 60-minute limit, offer the button again; the service's
+  // lock turns a start during a live run into a no-op.
+  readonly property bool checking: Boolean(run && run.state === "running"
+    && now - Date.parse(run.startedAt) < 60 * 60 * 1000)
 
   // tone picks the bar treatment: alert is a solid red badge, warn is amber
   // text, dim is the faded glyph, normal is the plain bar foreground.
@@ -92,6 +97,19 @@ Panel {
     Quickshell.execDetached(["systemctl", "--user", "start", "--no-block", "security-watch.service"])
   }
 
+  // Nothing to fix once a finding is fixed or never applied, unless the review
+  // still asks something of the user, such as removing a stale mitigation.
+  function fixable(finding) {
+    return Boolean(finding.youShould) || (finding.status !== "fixed" && finding.status !== "not-affected")
+  }
+
+  // A login shell, as the service does, so ~/bin and claude are on PATH.
+  function fix(finding) {
+    Quickshell.execDetached(["omarchy-launch-terminal", "bash", "-lc",
+      'exec "$HOME/bin/security-watch" fix "$1"', "security-watch", finding.id])
+    root.close()
+  }
+
   function openReport() {
     if (!result) return
     Quickshell.execDetached(["omarchy", "launch", "editor", result.report])
@@ -104,6 +122,7 @@ Panel {
 
   onOpenedChanged: if (opened) {
     root.now = Date.now()
+    scroll.contentY = 0
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -173,7 +192,7 @@ Panel {
     open: root.opened
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(520))
-    contentHeight: panel.fittedContentHeight(contentColumn.implicitHeight, Style.space(720))
+    contentHeight: panel.fittedContentHeight(header.height + contentColumn.spacing + contentColumn.implicitHeight, Style.space(720))
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -187,11 +206,67 @@ Panel {
       }
       onTextKey: function(text) {
         if (text === "o" || text === "O") root.openReport()
+        if ((text === "r" || text === "R") && !root.checking) root.runNow()
+      }
+
+      // Pinned above the scrolling findings so the actions are always in view
+      // without taking a row of their own.
+      Item {
+        id: header
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        height: Math.max(title.implicitHeight, headerActions.implicitHeight)
+        Text {
+          id: title
+          anchors.verticalCenter: parent.verticalCenter
+          text: "Security watch"
+          color: root.foreground
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.title
+          font.bold: true
+        }
+        Row {
+          id: headerActions
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(6)
+          PanelActionButton {
+            width: Style.space(84)
+            size: Style.space(24)
+            iconText: root.checking ? "Checking…" : "Rescan"
+            tooltipText: "Start security-watch.service in the background (R)"
+            foreground: Color.accent
+            fontFamily: root.fontFamily
+            fontSize: Style.font.caption
+            bordered: true
+            focusable: true
+            enabled: !root.checking
+            onClicked: root.runNow()
+          }
+          PanelActionButton {
+            width: Style.space(64)
+            size: Style.space(24)
+            iconText: "Report"
+            tooltipText: root.result ? root.result.report + " (O)" : "No report yet"
+            foreground: Color.accent
+            fontFamily: root.fontFamily
+            fontSize: Style.font.caption
+            bordered: true
+            focusable: true
+            enabled: root.result !== null
+            onClicked: root.openReport()
+          }
+        }
       }
 
       Flickable {
         id: scroll
-        anchors.fill: parent
+        anchors.top: header.bottom
+        anchors.topMargin: contentColumn.spacing
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
         contentWidth: width
         contentHeight: contentColumn.implicitHeight
         clip: true
@@ -204,27 +279,6 @@ Panel {
           id: contentColumn
           width: scroll.width
           spacing: Style.space(12)
-
-          Row {
-            width: parent.width
-            Text {
-              id: title
-              text: "Security watch"
-              color: root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.title
-              font.bold: true
-            }
-            Text {
-              width: parent.width - x
-              anchors.baseline: title.baseline
-              text: root.result ? "Checked " + root.ago(root.result.checkedAt) : ""
-              color: root.dim
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-              horizontalAlignment: Text.AlignRight
-            }
-          }
 
           Text {
             width: parent.width
@@ -253,9 +307,9 @@ Panel {
           Text {
             visible: root.result !== null
             width: parent.width
-            text: !root.result ? "" : root.result.since
-              ? "Window " + root.when(root.result.since) + " to " + root.when(root.result.checkedAt)
-              : "First review, " + root.when(root.result.checkedAt) + ": every unfixed advisory plus the prior 30 days"
+            text: !root.result ? "" : "Checked " + root.ago(root.result.checkedAt) + "  ·  " + (root.result.since
+              ? "window " + root.when(root.result.since) + " to " + root.when(root.result.checkedAt)
+              : "first review, " + root.when(root.result.checkedAt) + ": every unfixed advisory plus the prior 30 days")
             textFormat: Text.PlainText
             color: root.dim
             font.family: root.fontFamily
@@ -283,7 +337,7 @@ Panel {
               Column {
                 id: todoCopy
                 anchors.left: parent.left
-                anchors.right: parent.right
+                anchors.right: todoFix.left
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.margins: Style.space(10)
                 spacing: Style.space(4)
@@ -306,6 +360,22 @@ Panel {
                   font.pixelSize: Style.font.caption
                   wrapMode: Text.WordWrap
                 }
+              }
+              PanelActionButton {
+                id: todoFix
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: Style.space(10)
+                width: Style.space(40)
+                size: Style.space(22)
+                iconText: "Fix"
+                tooltipText: "Open a Claude Code session with full permissions to fix " + modelData.id
+                foreground: Color.urgent
+                fontFamily: root.fontFamily
+                fontSize: Style.font.caption
+                bordered: true
+                focusable: true
+                onClicked: root.fix(modelData)
               }
             }
           }
@@ -370,7 +440,7 @@ Panel {
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.leftMargin: Style.space(4)
-                anchors.rightMargin: Style.space(4)
+                anchors.rightMargin: findingFix.visible ? findingFix.width + Style.space(12) : Style.space(4)
                 spacing: Style.space(2)
                 Text {
                   width: parent.width
@@ -408,43 +478,31 @@ Panel {
                 cursorShape: Qt.PointingHandCursor
                 onClicked: Qt.openUrlExternally(modelData.references[0])
               }
-            }
-          }
-
-          Row {
-            spacing: Style.space(8)
-            anchors.horizontalCenter: parent.horizontalCenter
-            PanelActionButton {
-              width: Style.space(140)
-              size: Style.space(30)
-              iconText: root.watchState === "running" ? "Checking…" : "Run check now"
-              tooltipText: "Start security-watch.service in the background"
-              foreground: Color.accent
-              fontFamily: root.fontFamily
-              fontSize: Style.font.caption
-              bordered: true
-              focusable: true
-              enabled: !(root.run && root.run.state === "running")
-              onClicked: root.runNow()
-            }
-            PanelActionButton {
-              width: Style.space(140)
-              size: Style.space(30)
-              iconText: "Open report"
-              tooltipText: root.result ? root.result.report : "No report yet"
-              foreground: Color.accent
-              fontFamily: root.fontFamily
-              fontSize: Style.font.caption
-              bordered: true
-              focusable: true
-              enabled: root.result !== null
-              onClicked: root.openReport()
+              // After the MouseArea so it sits above it and takes its own clicks.
+              PanelActionButton {
+                id: findingFix
+                visible: root.fixable(modelData)
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.topMargin: Style.space(4)
+                anchors.rightMargin: Style.space(4)
+                width: Style.space(40)
+                size: Style.space(22)
+                iconText: "Fix"
+                tooltipText: "Open a Claude Code session with full permissions to fix " + modelData.id
+                foreground: Color.accent
+                fontFamily: root.fontFamily
+                fontSize: Style.font.caption
+                bordered: true
+                focusable: true
+                onClicked: root.fix(modelData)
+              }
             }
           }
 
           Text {
             width: parent.width
-            text: "Click a finding for its advisory  ·  O open report  ·  Esc close"
+            text: "Click a finding for its advisory  ·  Fix opens Claude on it  ·  R rescan  ·  O open report  ·  Esc close"
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption

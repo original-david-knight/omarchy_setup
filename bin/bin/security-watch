@@ -4,7 +4,8 @@
 `security-watch run` gathers an inventory, asks Claude to review security
 announcements since the last successful check, and writes status.json for the
 david.security bar widget. `security-watch status` prints that file's summary.
-See docs/security-watch.md.
+`security-watch fix <id>` opens an interactive Claude session to fix one
+finding. See docs/security-watch.md.
 """
 import datetime as dt
 import json
@@ -37,6 +38,8 @@ INVENTORY = {
     "user-services.txt": ["systemctl", "--user", "list-units", "--type=service", "--state=running", "--no-pager", "--plain"],
     "modules.txt": ["lsmod"],
     "flatpak.txt": ["flatpak", "list", "--columns=application,version,branch,origin"],
+    "runtimes.txt": ["sh", "-c", 'command -v mise >/dev/null && { echo "== mise ls"; mise ls; }; '
+                                 'command -v rbenv >/dev/null && { echo "== rbenv versions"; rbenv versions --bare; }; true'],
     "modprobe-security.txt": ["sh", "-c", 'for f in /etc/modprobe.d/security-*.conf; do [ -e "$f" ] && printf "== %s\\n%s\\n" "$f" "$(cat "$f")"; done; true'],
     "sysctl.txt": ["sysctl", "kernel.unprivileged_userns_clone", "user.max_user_namespaces",
                    "kernel.unprivileged_bpf_disabled", "kernel.yama.ptrace_scope", "kernel.kptr_restrict"],
@@ -85,8 +88,9 @@ tracker does not cover it), os-release, installed packages (`pacman -Q`),
 `arch-audit --json` (Arch tracker matches for installed packages),
 `arch-audit --upgradable` (those already fixed in the repos), `checkupdates`
 (pending upgrades), listening sockets, running services, loaded kernel modules,
-Flatpaks, existing `/etc/modprobe.d/security-*.conf` mitigations, and security
-sysctls. ./inventory/NOTES.txt lists any command that failed or was missing.
+Flatpaks, per-user runtimes installed by mise and rbenv (`runtimes.txt`),
+existing `/etc/modprobe.d/security-*.conf` mitigations, and security sysctls.
+./inventory/NOTES.txt lists any command that failed or was missing.
 Inspect the live system further with read-only commands when you need to.
 
 ## Sources
@@ -176,6 +180,40 @@ Then return the structured result:
   user, or null when nothing is needed from them. Keep `youShould` null for
   routine pending updates that the normal update flow will handle.
 - `actions`: changes you made this run, or an empty list.
+""")
+
+# The panel's Fix button opens this in an interactive session. The user asked
+# for it, so the nightly action policy does not apply; only a reboot or logout,
+# which would end the session, is left to them.
+FIX_PROMPT = string.Template("""\
+Fix this security finding on this machine (Arch Linux with Omarchy, Hyprland).
+The nightly security review reported it; I clicked Fix in its bar widget.
+
+## Finding
+$finding
+
+## Context
+- Review summary: $summary
+- Checked at $checked_at. The run directory is $run_dir (this working
+  directory): `inventory/` holds the machine inventory it reviewed and
+  `report.md` the full report.$followup
+- Changes the nightly review already made:
+$actions
+
+## What to do
+You have full permissions and passwordless sudo. Confirm the finding still
+applies here against the installed version or running kernel, then fix it
+properly: prefer the vendor fix, otherwise the most reversible mitigation that
+breaks nothing in use. If a mitigation the review applied is no longer needed,
+remove it. Verify the result.
+
+Do not reboot, log out, or end the desktop session; that would end this
+session too. Tell me if one is needed. Ask me when a choice is genuinely mine.
+
+Finish with what you changed, the exact command that reverts each change, and
+anything left for me. Then run
+`systemctl --user start --no-block security-watch.service` so a fresh review
+updates the bar widget.
 """)
 
 
@@ -440,10 +478,49 @@ def status():
     return 0
 
 
+def fix_prompt(result, finding):
+    run_dir = Path(result["report"]).parent
+    followup = run_dir / f"FOLLOWUP-{finding['id']}.md"
+    return FIX_PROMPT.substitute(
+        finding=json.dumps(finding, indent=2),
+        summary=result["summary"],
+        checked_at=result["checkedAt"],
+        run_dir=run_dir,
+        followup=f"\n  `{followup.name}` documents its mitigation." if followup.is_file() else "",
+        actions=json.dumps(result["actions"], indent=2) if result["actions"] else "none",
+    )
+
+
+def fix(finding_id):
+    """Replace this process with an interactive, unrestricted Claude session on one finding."""
+    current = read_status(state_dir() / "status.json")
+    result = current["result"] if current else None
+    finding = next((f for f in result["findings"] if f["id"] == finding_id), None) if result else None
+    if finding is None:
+        raise ReviewError(f"no finding {finding_id} in the last review")
+    claude = shutil.which("claude") or str(Path.home() / ".local/bin/claude")
+    run_dir = Path(result["report"]).parent
+    os.chdir(run_dir if run_dir.is_dir() else Path.home())
+    try:
+        os.execv(claude, ["claude", "--model", "opus", "--dangerously-skip-permissions",
+                          fix_prompt(result, finding)])
+    except OSError as error:
+        raise ReviewError(f"could not start claude: {error}")
+
+
 def main(argv):
+    if len(argv) == 3 and argv[1] == "fix":
+        try:
+            return fix(argv[2])
+        except ReviewError as error:
+            print(f"security-watch: {error}", file=sys.stderr)
+            # Launched from the widget, the terminal would close before this is read.
+            if sys.stdin.isatty():
+                input("Press Enter to close. ")
+            return 1
     commands = {"run": run, "status": status}
     if len(argv) != 2 or argv[1] not in commands:
-        print("usage: security-watch run|status", file=sys.stderr)
+        print("usage: security-watch run|status|fix <finding id>", file=sys.stderr)
         return 2
     return commands[argv[1]]()
 

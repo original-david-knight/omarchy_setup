@@ -44,9 +44,11 @@ FAKE_CLAUDE = textwrap.dedent(f"""\
     #!{sys.executable}
     import json, os, sys
     from pathlib import Path
-    Path("prompt.txt").write_text(sys.stdin.read())
+    Path("prompt.txt").write_text("" if sys.stdin.isatty() else sys.stdin.read())
     Path("argv.json").write_text(json.dumps(sys.argv[1:]))
     mode = os.environ["FAKE_CLAUDE_MODE"]
+    if mode == "interactive":
+        sys.exit(0)
     if mode == "crash":
         print("API Error: overloaded", file=sys.stderr)
         sys.exit(1)
@@ -100,8 +102,8 @@ class RunTest(unittest.TestCase):
 
     def run_watch(self, mode="ok", reply=None, command="run"):
         env = dict(self.env, FAKE_CLAUDE_MODE=mode, FAKE_CLAUDE_REVIEW=json.dumps(reply))
-        return subprocess.run([sys.executable, str(SCRIPT), command], env=env,
-                              capture_output=True, text=True, timeout=60)
+        return subprocess.run([sys.executable, str(SCRIPT), *command.split()], env=env,
+                              stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
 
     def status(self):
         return json.loads(self.status_path.read_text())
@@ -171,6 +173,26 @@ class RunTest(unittest.TestCase):
         prompt = (Path(self.status()["run"]["dir"]) / "prompt.txt").read_text()
         self.assertIn(f"published since {first} (the last successful check)", prompt)
         self.assertIn('"title": "pam_namespace path traversal"', prompt)
+
+    def test_fix_opens_unrestricted_session_on_one_finding(self):
+        self.run_watch(reply=review("pam is affected.", [PAM, ZDI]))
+        run_dir = Path(self.status()["run"]["dir"])
+        (run_dir / "argv.json").unlink()
+        done = self.run_watch(mode="interactive", command="fix CVE-2025-6020")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        argv = json.loads((run_dir / "argv.json").read_text())
+        self.assertEqual(argv[:3], ["--model", "opus", "--dangerously-skip-permissions"])
+        prompt = argv[3]
+        self.assertIn(PAM["detail"], prompt)
+        self.assertNotIn(ZDI["detail"], prompt)
+        self.assertIn(f"The run directory is {run_dir}", prompt)
+        self.assertIn("systemctl --user start --no-block security-watch.service", prompt)
+
+    def test_fix_rejects_unknown_finding(self):
+        self.run_watch(reply=review("pam is affected.", [PAM]))
+        done = self.run_watch(mode="interactive", command="fix CVE-0000-0000")
+        self.assertEqual(done.returncode, 1)
+        self.assertEqual(done.stderr, "security-watch: no finding CVE-0000-0000 in the last review\n")
 
 
 class PanelTest(unittest.TestCase):

@@ -102,7 +102,7 @@ the udev rule that grants the seated user access. See `docs/headset-widget.md`.
 It reviews announcements since the last successful check against an inventory
 of this machine, mitigates only what its action policy allows, and writes
 `~/.local/state/security-watch/status.json`. The wrapper, not the model,
-computes the level. The `david.security` widget, just before power in both
+computes the level. The `david.security` widget, next to power in both
 layouts, reads that file and turns solid red on an alert. Do not start the
 service casually: it is a real Claude run with sudo. See
 `docs/security-watch.md`.

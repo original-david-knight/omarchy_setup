@@ -14,7 +14,8 @@ needs you.
    previous result stays in place.
 2. Gathers an inventory into `inventory/`: `uname -a`, `/etc/os-release`,
    `pacman -Q`, `arch-audit --json`, `arch-audit --upgradable`, `checkupdates`,
-   listening sockets, running system and user services, `lsmod`, Flatpaks, the
+   listening sockets, running system and user services, `lsmod`, Flatpaks,
+   mise and rbenv runtimes, the
    contents of `/etc/modprobe.d/security-*.conf`, and security sysctls. A
    missing tool or nonzero exit becomes a line in `inventory/NOTES.txt`. It
    never fails the run. (`checkupdates` exits 2 when nothing is pending.)
@@ -129,6 +130,7 @@ wake. `activate.sh` enables the timer. `arch-audit` is in `packages/core.txt`.
 systemctl --user start --no-block security-watch.service   # run now
 journalctl --user -u security-watch.service -f            # follow it
 security-watch status                                      # print the last result
+security-watch fix <finding id>                            # Claude session to fix one finding
 systemctl --user list-timers security-watch.timer          # next run
 ```
 
@@ -155,11 +157,26 @@ review clears it. Notice looks calm on purpose. Arch nearly always has a
 medium advisory waiting on a fix, and that should not look alarming. The
 tooltip gives the summary, the check's age, and the finding count.
 
-Left click opens the panel. It shows the summary and window, then **You
-should** items in red boxes, then the changes made with their revert commands
-(selectable for copying), then findings sorted by severity and status. Click a
-finding to open its first reference. **Run check now** starts the service.
-**Open report** opens `report.md` with `omarchy launch editor`.
+Left click opens the panel. Its title row stays pinned above the scrolling
+content and carries two compact buttons:
+**Rescan** (or R) starts the service and **Report** (or O) opens `report.md`
+with `omarchy launch editor`. Rescan reads **Checking…** and is disabled while
+a run is in progress, for at most the service's 60-minute limit, so a run
+killed without updating `status.json` cannot leave it stuck. Below come the
+summary, the check's age and window, **You should** items in red boxes, the
+changes made with their revert commands (selectable for copying), and findings
+sorted by severity and status. Click a finding to open its first reference.
+
+Each **You should** box, and each finding that is not `fixed` or
+`not-affected`, has a **Fix** button. It closes the panel and opens a terminal
+running `security-watch fix <id>`, which starts an interactive
+`claude --model opus --dangerously-skip-permissions` session in that run's
+directory. The prompt carries the finding, the review summary, the changes
+the review already made, and pointers to `inventory/`, `report.md` and any
+`FOLLOWUP-<id>.md`. The nightly action policy does not apply: you asked for
+the fix, so Claude may change anything and use sudo. It is told only not to
+reboot or log out, since that would end the session. It finishes by listing
+its changes with reverts and starting a rescan so the widget catches up.
 
 The widget re-reads `status.json` when it changes and every minute.
 
