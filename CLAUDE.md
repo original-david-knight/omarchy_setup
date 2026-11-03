@@ -49,6 +49,10 @@ The selected machine profile adds:
 
 `bin_laptop` contains the touchpad auto-toggle helper. Hyprland's
 `autostart.lua` launches it only when the executable is present.
+`omarchy_laptop` also carries `~/.config/hypr/laptop-bindings.lua`, which
+`bindings.lua` loads only when present. Its Ctrl+Shift+Space sends Alt+Down
+(herdr's `next_workspace`) to the focused window, so it switches workspaces in
+a remote herdr reached over SSH, where `herdr-tmux` would act locally.
 
 The repository manages the Omarchy Shell bar layout through the profile-specific
 `omarchy_laptop/.config/omarchy/shell.json` and

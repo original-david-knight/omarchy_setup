@@ -139,3 +139,11 @@ end)
 
 -- IDE selection menu (the helper now uses Quattro's menu instead of Walker).
 o.bind("SUPER + I", "IDE menu", home .. "/bin/ide-menu")
+
+-- Laptop-only bindings, deployed by the omarchy_laptop stow package.
+local laptop_bindings_path = home .. "/.config/hypr/laptop-bindings.lua"
+local laptop_bindings = io.open(laptop_bindings_path, "r")
+if laptop_bindings then
+  laptop_bindings:close()
+  dofile(laptop_bindings_path)
+end
