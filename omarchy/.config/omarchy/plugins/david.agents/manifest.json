@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "david.agents",
+  "name": "Agents with accounts",
+  "version": "1.0.0",
+  "author": "David Knight",
+  "license": "MIT",
+  "description": "The stock Omarchy Agents panel, untouched, plus a row that switches Claude Code between saved subscription accounts.",
+  "kinds": ["bar-widget"],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Agents",
+    "description": "Agent usage, limits, and pace, with a Claude Code account switch.",
+    "category": "AI",
+    "aliases": ["agents", "model-usage", "claude-account"],
+    "allowMultiple": false,
+    "defaults": {
+      "providers": {
+        "claude": { "enabled": true },
+        "codex": { "enabled": true },
+        "fireworks": { "enabled": true }
+      },
+      "refreshIntervalSec": 900,
+      "syncMode": "Off",
+      "syncDir": "",
+      "syncFileName": "",
+      "syncDeviceId": ""
+    }
+  },
+  "omarchy": {
+    "extends": "omarchy.agents"
+  }
+}

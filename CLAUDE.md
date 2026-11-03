@@ -107,6 +107,13 @@ layouts, reads that file and turns solid red on an alert. Do not start the
 service casually: it is a real Claude run with sudo. See
 `docs/security-watch.md`.
 
+`david.agents` replaces the stock `omarchy.agents` in both layouts. It loads
+the untouched stock Agents panel by URL and adds an **Account** row to its
+Claude tab that switches Claude Code between saved subscription logins through
+`claude-account` (`bin`). Saved logins live in
+`~/.local/state/claude-accounts/`, never in the repo. See
+`docs/claude-accounts.md`.
+
 `herdr` and `bin` must remain non-folded because those directories also hold
 runtime state or files owned outside this repository. The deployment script
 uses non-folding consistently for every package so profile changes and future

@@ -1,0 +1,305 @@
+#!/usr/bin/env python3
+"""Switch Claude Code between saved subscription accounts.
+
+Claude Code keeps one login: the `claudeAiOauth` entry of
+~/.claude/.credentials.json and the matching `oauthAccount` profile in
+~/.claude.json. This saves that pair per account under
+~/.local/state/claude-accounts/ and swaps one back in, so every new Claude
+session, headless run, and the bar's usage meters follow the chosen account.
+Settings, transcripts, MCP sign-ins and everything else in ~/.claude stay
+shared.
+
+  claude-account list [--json]   saved accounts; the live one is marked
+  claude-account use <account>   switch (an email, or a unique prefix of one)
+  claude-account add             save the current login, then sign in another
+  claude-account save            save the current login
+
+Running sessions refresh their own tokens and may write their account back
+over a switch. Every save is therefore filed under the account the live token
+actually belongs to, asked of Anthropic's profile endpoint, never under the
+account last chosen, so a late write can not overwrite another account's slot.
+See docs/claude-accounts.md.
+"""
+import contextlib
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.request
+
+PROFILE_ENDPOINT = "https://api.anthropic.com/api/oauth/profile"
+IDENTITY_CACHE_SECONDS = 300
+HOME = Path.home()
+
+
+def claude_dir():
+    return Path(os.path.expanduser(os.environ.get("CLAUDE_CONFIG_DIR") or "~/.claude"))
+
+
+def credentials_path():
+    return claude_dir() / ".credentials.json"
+
+
+def profile_path():
+    # Claude Code moves its global config into the config dir only when
+    # CLAUDE_CONFIG_DIR is set.
+    if os.environ.get("CLAUDE_CONFIG_DIR"):
+        return claude_dir() / ".claude.json"
+    return HOME / ".claude.json"
+
+
+def state_dir():
+    root = Path(os.environ.get("XDG_STATE_HOME") or HOME / ".local/state") / "claude-accounts"
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(root, 0o700)
+    return root
+
+
+def read_json(path, fallback=None):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return fallback
+
+
+def write_json(path, data, mode=0o600):
+    """Replace path atomically, keeping a symlinked target in place."""
+    target = path.resolve()
+    fd, tmp = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2)
+            handle.write("\n")
+        os.chmod(tmp, mode)
+        os.replace(tmp, target)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
+
+
+@contextlib.contextmanager
+def locked():
+    with open(state_dir() / ".lock", "w") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        yield
+
+
+def slot_path(email):
+    return state_dir() / f"{email.lower()}.json"
+
+
+def saved_accounts():
+    accounts = []
+    for path in sorted(state_dir().glob("*.json")):
+        data = read_json(path)
+        if isinstance(data, dict) and isinstance(data.get("claudeAiOauth"), dict) and data.get("email"):
+            accounts.append(data)
+    return accounts
+
+
+def live_login():
+    oauth = (read_json(credentials_path(), {}) or {}).get("claudeAiOauth")
+    return oauth if isinstance(oauth, dict) and oauth.get("accessToken") else None
+
+
+def live_profile():
+    profile = (read_json(profile_path(), {}) or {}).get("oauthAccount")
+    return profile if isinstance(profile, dict) else None
+
+
+def token_key(oauth):
+    return hashlib.sha256(str(oauth.get("refreshToken") or oauth.get("accessToken")).encode()).hexdigest()
+
+
+def ask_profile_endpoint(access_token):
+    request = urllib.request.Request(PROFILE_ENDPOINT, headers={
+        "Authorization": "Bearer " + access_token,
+        "anthropic-beta": "oauth-2025-04-20",
+        "Accept": "application/json",
+    })
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            payload = json.loads(response.read().decode("utf-8", errors="replace"))
+    except (urllib.error.URLError, OSError, ValueError):
+        return ""
+    account = payload.get("account") if isinstance(payload, dict) else None
+    return str((account or {}).get("email") or "").lower()
+
+
+def identify(oauth, network=True):
+    """The email the live token belongs to, or "" when it can not be told.
+
+    A saved token that is still the live one names its account outright. A
+    token Claude Code has since refreshed is asked of the profile endpoint,
+    whose answer is cached by token so an open panel does not poll it.
+    """
+    key = token_key(oauth)
+    for account in saved_accounts():
+        if token_key(account["claudeAiOauth"]) == key:
+            return account["email"]
+    cache_path = state_dir() / ".identity-cache.json"
+    cache = read_json(cache_path, {}) or {}
+    cached = cache.get(key)
+    if cached and time.time() - cached.get("at", 0) < IDENTITY_CACHE_SECONDS:
+        return cached["email"]
+    expired = int(oauth.get("expiresAt") or 0) <= time.time() * 1000
+    email = "" if expired or not network else ask_profile_endpoint(oauth["accessToken"])
+    if email:
+        write_json(cache_path, {key: {"email": email, "at": time.time()}})
+    return email
+
+
+def plan_label(oauth):
+    tier = str(oauth.get("rateLimitTier") or "")
+    if "max_20x" in tier:
+        return "Max 20x"
+    if "max_5x" in tier:
+        return "Max 5x"
+    subscription = str(oauth.get("subscriptionType") or "")
+    return subscription[:1].upper() + subscription[1:]
+
+
+def save_live(required=True):
+    """File the live login under the account it belongs to; return its email."""
+    oauth = live_login()
+    if oauth is None:
+        if required:
+            sys.exit("claude-account: Claude Code is not signed in.")
+        return ""
+    email = identify(oauth)
+    if not email:
+        if required:
+            sys.exit("claude-account: could not tell which account the current login belongs to. "
+                     "Start Claude Code once to refresh it, then try again.")
+        return ""
+    profile = live_profile()
+    if not profile or str(profile.get("emailAddress") or "").lower() != email:
+        # The profile in ~/.claude.json describes another account; keep the
+        # saved one rather than pairing this token with the wrong name.
+        profile = (read_json(slot_path(email), {}) or {}).get("oauthAccount")
+    write_json(slot_path(email), {
+        "email": email,
+        "savedAt": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "claudeAiOauth": oauth,
+        "oauthAccount": profile,
+    })
+    return email
+
+
+def find_account(query):
+    query = query.lower()
+    accounts = saved_accounts()
+    exact = [a for a in accounts if a["email"] == query]
+    matches = exact or [a for a in accounts if a["email"].startswith(query)]
+    if len(matches) != 1:
+        known = ", ".join(a["email"] for a in accounts) or "none saved"
+        sys.exit(f"claude-account: no single saved account matches {query!r} ({known}).")
+    return matches[0]
+
+
+def install(account):
+    credentials = read_json(credentials_path(), {}) or {}
+    credentials["claudeAiOauth"] = account["claudeAiOauth"]
+    write_json(credentials_path(), credentials)
+    if account.get("oauthAccount"):
+        # Read as late as possible: running sessions rewrite this file too.
+        profile = read_json(profile_path())
+        if isinstance(profile, dict):
+            profile["oauthAccount"] = account["oauthAccount"]
+            write_json(profile_path(), profile, mode=profile_path().stat().st_mode & 0o777)
+
+
+def refresh_bar():
+    """Re-probe the bar's Claude limits for the account now in place.
+
+    The collector's probe cache holds the previous account's numbers and is
+    also its fallback when a probe fails, so it goes first. --limits-only
+    reuses the transcript scan, which is the same for every account, and
+    finishes in well under a second. It runs in the foreground: the widget
+    shows the switch until it is done, and a detached run would die with the
+    terminal that `add` runs in.
+    """
+    cache = Path(os.environ.get("XDG_CACHE_HOME") or HOME / ".cache") / "omarchy/agent-usage/claude-limits.json"
+    with contextlib.suppress(OSError):
+        cache.unlink()
+    with contextlib.suppress(OSError, subprocess.TimeoutExpired):
+        subprocess.run(["omarchy-agent-usage-update", "--limits-only", "claude"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+
+
+def cmd_list(as_json):
+    with locked():
+        # Refiling on every look keeps each slot's token current as Claude
+        # Code refreshes it, so the next look matches it without the network.
+        active = save_live(required=False)
+        accounts = saved_accounts()
+    now_ms = time.time() * 1000
+    rows = [{
+        "email": a["email"],
+        "name": str((a.get("oauthAccount") or {}).get("displayName") or ""),
+        "plan": plan_label(a["claudeAiOauth"]),
+        "active": a["email"] == active,
+        # A slot left unused past this needs a fresh sign-in.
+        "signInExpiresAt": int(a["claudeAiOauth"].get("refreshTokenExpiresAt") or 0),
+        "signInExpired": 0 < int(a["claudeAiOauth"].get("refreshTokenExpiresAt") or 0) <= now_ms,
+    } for a in accounts]
+    if as_json:
+        print(json.dumps({"active": active, "accounts": rows}))
+        return
+    for row in rows:
+        mark = "*" if row["active"] else " "
+        note = "  (sign-in expired)" if row["signInExpired"] else ""
+        print(f"{mark} {row['email']}  {row['plan']}{note}")
+    if not rows:
+        print("No saved accounts. Run `claude-account save`.")
+
+
+def cmd_use(query):
+    with locked():
+        current = save_live(required=False)
+        account = find_account(query)
+        if account["email"] == current:
+            print(f"Already using {current}.")
+            return
+        install(account)
+    refresh_bar()
+    print(f"Switched Claude Code to {account['email']}. New sessions use it; restart running ones.")
+
+
+def cmd_add():
+    with locked():
+        before = save_live(required=False)
+    if before:
+        print(f"Saved {before}. Sign in with the other account in the browser that opens.")
+    if subprocess.call(["claude", "auth", "login", "--claudeai"]) != 0:
+        sys.exit("claude-account: sign-in did not finish.")
+    with locked():
+        added = save_live()
+    refresh_bar()
+    print(f"Saved {added}; Claude Code is now using it.")
+
+
+def main(argv):
+    command = argv[0] if argv else "list"
+    if command == "list":
+        cmd_list("--json" in argv[1:])
+    elif command == "use" and len(argv) == 2:
+        cmd_use(argv[1])
+    elif command == "add":
+        cmd_add()
+    elif command == "save":
+        with locked():
+            print(f"Saved {save_live()}.")
+    else:
+        sys.exit(__doc__)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
