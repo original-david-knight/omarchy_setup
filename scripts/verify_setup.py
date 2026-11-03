@@ -74,7 +74,7 @@ def verify(checks, home):
     for command, expected, label in [(["xdg-mime", "query", "default", "x-scheme-handler/https"], "google-chrome.desktop", "default browser"), (["xdg-mime", "query", "default", "inode/directory"], "yazi.desktop", "default file manager")]:
         result = subprocess.run(command, text=True, capture_output=True)
         checks.check(label, result.returncode == 0 and result.stdout.strip() == expected, "run ./stow_all.sh")
-    for unit in ("tailscaled.service", "postgresql.service", "bluetooth.service", "ensure-razer-basilisk-mouse.service", "boot-forensics.service"):
+    for unit in ("tailscaled.service", "sshd.service", "postgresql.service", "bluetooth.service", "ensure-razer-basilisk-mouse.service", "boot-forensics.service"):
         checks.command(unit + " enabled", ["systemctl", "is-enabled", "--quiet", unit])
     graphical = checks.command("graphical session", ["systemctl", "--user", "is-active", "--quiet", "graphical-session.target"], "log in graphically and run ./activate.sh", pending=True)
     for unit in ("primary-selection-sync.service", "voxtype.service", "omarchy-tailscale-receive.service"):

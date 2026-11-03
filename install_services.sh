@@ -10,6 +10,8 @@ if command -v ufw >/dev/null; then
   sudo ufw allow in on tailscale0 to any port 22 proto tcp comment omarchy-setup-ssh
   sudo ufw delete allow 22/tcp
 fi
+# Start sshd only after the firewall limits it to the tailnet.
+sudo systemctl enable --now sshd.service
 sudo install -Dm755 "$repo_dir/system/usr/local/sbin/capture-prev-boot.sh" /usr/local/sbin/capture-prev-boot.sh
 sudo install -Dm644 "$repo_dir/system/etc/systemd/system/boot-forensics.service" /etc/systemd/system/boot-forensics.service
 sudo systemctl daemon-reload
