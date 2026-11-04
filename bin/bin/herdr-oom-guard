@@ -1,0 +1,211 @@
+#!/usr/bin/env python3
+"""Kill the single biggest process in the Herdr app's panes before systemd-oomd
+kills all of them.
+
+Every pane of the Herdr desktop app runs inside one transient unit,
+hc-hold-*.service, under app.slice. systemd-oomd watches app.slice and, when
+memory and swap pass 90% (or memory pressure stays above 50% for 20 s), it
+kills the whole biggest unit: every pane, every agent session. This guard
+watches the same signals with lower thresholds and, when they trip, kills only
+the process in a holder unit with the largest resident plus swapped memory.
+
+    herdr-oom-guard run     watch and act (herdr-oom-guard.service)
+    herdr-oom-guard check   print the current state and would-be victim
+
+Each kill is logged to the journal with the victim's command line and sent as
+a desktop notification. See docs/herdr-oom-guard.md.
+"""
+
+import os
+from pathlib import Path
+import shutil
+import signal
+import subprocess
+import sys
+import time
+
+CGROUP_ROOT = Path(os.environ.get("HERDR_OOM_GUARD_CGROUP_ROOT", "/sys/fs/cgroup"))
+PROC = Path(os.environ.get("HERDR_OOM_GUARD_PROC", "/proc"))
+HOLDER_GLOB = "hc-hold-*.service"
+
+# systemd-oomd acts at 90% memory and 90% swap; act well before that.
+MEM_LIMIT = float(os.environ.get("HERDR_OOM_GUARD_MEM_LIMIT", "0.85"))
+SWAP_LIMIT = float(os.environ.get("HERDR_OOM_GUARD_SWAP_LIMIT", "0.75"))
+# systemd-oomd acts at 50% full pressure sustained for 20 s.
+PRESSURE_LIMIT = float(os.environ.get("HERDR_OOM_GUARD_PRESSURE_LIMIT", "30"))
+PRESSURE_SECONDS = 5
+# Do not kill anything smaller than this: it would not save the session.
+MIN_VICTIM_BYTES = 512 * 1024 * 1024
+POLL_SECONDS = 1
+TERM_GRACE_SECONDS = 5
+COOLDOWN_SECONDS = 15
+PROTECTED_COMMS = {"herdr-core"}
+
+
+def app_slice(uid=None):
+    uid = os.getuid() if uid is None else uid
+    return CGROUP_ROOT / f"user.slice/user-{uid}.slice/user@{uid}.service/app.slice"
+
+
+def holder_pids():
+    pids = set()
+    for unit in sorted(app_slice().glob(HOLDER_GLOB)):
+        for procs in unit.rglob("cgroup.procs"):
+            try:
+                pids.update(int(line) for line in procs.read_text().split())
+            except OSError:
+                continue
+    return pids
+
+
+def read_kb_fields(path, names):
+    values = {}
+    for line in path.read_text().splitlines():
+        key, _, rest = line.partition(":")
+        if key in names:
+            values[key] = int(rest.split()[0]) * 1024
+    return values
+
+
+def memory_state():
+    info = read_kb_fields(PROC / "meminfo", {"MemTotal", "MemAvailable", "SwapTotal", "SwapFree"})
+    mem = 1 - info["MemAvailable"] / info["MemTotal"]
+    swap = 1 - info["SwapFree"] / info["SwapTotal"] if info.get("SwapTotal") else 1.0
+    return mem, swap
+
+
+def full_pressure():
+    """The app.slice `full avg10` memory pressure, in percent."""
+    try:
+        text = (app_slice() / "memory.pressure").read_text()
+    except OSError:
+        return 0.0
+    for line in text.splitlines():
+        if line.startswith("full "):
+            fields = dict(item.split("=", 1) for item in line.split()[1:])
+            return float(fields.get("avg10", 0))
+    return 0.0
+
+
+def footprint(pid):
+    """(bytes, comm, cmdline) for a process, or None once it has gone."""
+    try:
+        sizes = read_kb_fields(PROC / str(pid) / "status", {"VmRSS", "VmSwap"})
+        comm = (PROC / str(pid) / "comm").read_text().strip()
+        raw = (PROC / str(pid) / "cmdline").read_bytes()
+    except (OSError, ValueError):
+        return None
+    cmdline = raw.replace(b"\0", b" ").decode(errors="replace").strip() or f"[{comm}]"
+    return sizes.get("VmRSS", 0) + sizes.get("VmSwap", 0), comm, cmdline
+
+
+def pick_victim():
+    best = None
+    for pid in holder_pids():
+        if pid == os.getpid():
+            continue
+        found = footprint(pid)
+        if not found or found[1] in PROTECTED_COMMS:
+            continue
+        if best is None or found[0] > best[1]:
+            best = (pid, *found)
+    if best is None or best[1] < MIN_VICTIM_BYTES:
+        return None
+    return best
+
+
+def gib(size):
+    return f"{size / 2**30:.1f} GiB"
+
+
+def log(message):
+    print(message, flush=True)
+
+
+def notify(summary, body):
+    if shutil.which("notify-send"):
+        subprocess.Popen(["notify-send", "-u", "critical", "-a", "herdr-oom-guard", summary, body],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def kill(pid):
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    deadline = time.monotonic() + TERM_GRACE_SECONDS
+    while time.monotonic() < deadline:
+        if footprint(pid) is None:
+            return
+        time.sleep(0.2)
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+
+
+class Trigger:
+    """Decides when memory is close enough to systemd-oomd's limits to act."""
+
+    def __init__(self):
+        self.pressure_since = None
+
+    def reason(self, mem, swap, pressure, now):
+        if mem >= MEM_LIMIT and swap >= SWAP_LIMIT:
+            return f"memory {mem:.0%} and swap {swap:.0%} used"
+        if pressure >= PRESSURE_LIMIT:
+            self.pressure_since = self.pressure_since if self.pressure_since is not None else now
+            if now - self.pressure_since >= PRESSURE_SECONDS:
+                return f"memory pressure {pressure:.0f}% for {now - self.pressure_since:.0f} s"
+        else:
+            self.pressure_since = None
+        return None
+
+
+def run():
+    log(f"watching {app_slice()}/{HOLDER_GLOB}: act at memory {MEM_LIMIT:.0%} + swap "
+        f"{SWAP_LIMIT:.0%}, or full pressure {PRESSURE_LIMIT:.0f}% for {PRESSURE_SECONDS} s")
+    trigger = Trigger()
+    while True:
+        mem, swap = memory_state()
+        why = trigger.reason(mem, swap, full_pressure(), time.monotonic())
+        if why:
+            victim = pick_victim()
+            if victim:
+                pid, size, comm, cmdline = victim
+                log(f"{why}: killing pid {pid} ({comm}, {gib(size)}): {cmdline}")
+                notify(f"Killed {comm} ({gib(size)})",
+                       f"Memory nearly exhausted ({why}). Killed the largest Herdr pane process to "
+                       f"save the other sessions:\n{cmdline[:300]}")
+                kill(pid)
+                trigger.pressure_since = None
+                time.sleep(COOLDOWN_SECONDS)
+                continue
+        time.sleep(POLL_SECONDS)
+
+
+def check():
+    mem, swap = memory_state()
+    print(f"memory used {mem:.0%} (limit {MEM_LIMIT:.0%}), swap used {swap:.0%} "
+          f"(limit {SWAP_LIMIT:.0%}), full pressure {full_pressure():.1f}% (limit {PRESSURE_LIMIT:.0f}%)")
+    units = sorted(p.name for p in app_slice().glob(HOLDER_GLOB))
+    print(f"holder units: {', '.join(units) or 'none'}")
+    victim = pick_victim()
+    if victim:
+        pid, size, comm, cmdline = victim
+        print(f"would kill: pid {pid} ({comm}, {gib(size)}): {cmdline[:200]}")
+    else:
+        print(f"would kill: nothing (no pane process over {gib(MIN_VICTIM_BYTES)})")
+
+
+def main(argv):
+    if argv[1:] == ["run"]:
+        run()
+    elif argv[1:] == ["check"]:
+        check()
+    else:
+        sys.exit(__doc__.split("\n\n")[2].rstrip())
+
+
+if __name__ == "__main__":
+    main(sys.argv)

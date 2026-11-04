@@ -16,6 +16,10 @@ for unit in primary-selection-sync.service voxtype.service omarchy-tailscale-rec
   fi
 done
 systemctl --user enable --now security-watch.timer
+# Kills the largest Herdr pane process before systemd-oomd kills every pane.
+# See docs/herdr-oom-guard.md.
+systemctl --user enable herdr-oom-guard.service
+systemctl --user restart herdr-oom-guard.service
 if [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then
   hyprctl reload >/dev/null
   errors=$(hyprctl configerrors)

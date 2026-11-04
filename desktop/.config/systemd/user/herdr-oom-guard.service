@@ -1,0 +1,14 @@
+[Unit]
+Description=Kill the largest Herdr pane process before systemd-oomd kills every pane
+Documentation=file://%h/omarchy_setup/docs/herdr-oom-guard.md
+
+[Service]
+ExecStart=%h/bin/herdr-oom-guard run
+Restart=always
+RestartSec=2
+# Outside app.slice, which systemd-oomd watches and kills from.
+Slice=session.slice
+MemoryMax=64M
+
+[Install]
+WantedBy=default.target

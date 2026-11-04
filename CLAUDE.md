@@ -111,6 +111,14 @@ layouts, reads that file and turns solid red on an alert. Do not start the
 service casually: it is a real Claude run with sudo. See
 `docs/security-watch.md`.
 
+`herdr-oom-guard` (`bin`, run by `herdr-oom-guard.service` in `desktop`,
+enabled by `activate.sh`) protects the Herdr app's sessions. Every app pane
+runs in one `hc-hold-*.service` unit, and systemd-oomd kills a whole unit, so
+one runaway process used to take every session with it. The guard trips at
+85% memory with 75% swap, or sustained memory pressure, and kills only the
+largest pane process. `herdr-oom-guard check` shows the state and the would-be
+victim. See `docs/herdr-oom-guard.md`.
+
 `david.agents` replaces the stock `omarchy.agents` in both layouts. It loads
 the untouched stock Agents panel by URL and adds an **Account** row to its
 Claude tab that switches Claude Code between saved subscription logins through
