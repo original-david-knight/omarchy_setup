@@ -3,7 +3,7 @@
 // tests/test_bar_screen_layouts.py can run this file under Node.
 
 var ORIENTATIONS = ["portrait", "landscape"]
-var SECTIONS = ["left", "center", "right"]
+var SECTIONS = ["left", "centerBegin", "center", "centerEnd", "right"]
 var MATCH_KEYS = ["orientation", "name", "model", "serialNumber"]
 
 function isObject(value) {
@@ -145,6 +145,55 @@ function layoutIds(layout) {
   return ids
 }
 
+// The stock bar keeps one widget per `bar.layout` entry in a pool that every
+// bar surface shares, and each section shows a list of pool keys
+// (BarModel.layoutWidgets: { sections: region -> [key], entries: key -> entry }).
+// A screen layout therefore picks, for each of its entries, a pool key whose
+// widget has the same id: the one in the same section first, then any unused
+// one. The widget keeps its `bar.layout` settings. Ids with no widget in the
+// pool are returned in `missing`.
+function keysFor(widgets, layout, idOf) {
+  var getId = idOf || function(entry) { return typeof entry === "string" ? entry : (entry && entry.id) || "" }
+  var stock = isObject(widgets) && isObject(widgets.sections) ? widgets.sections : {}
+  var entries = isObject(widgets) && widgets.entries ? widgets.entries : {}
+  var candidates = []
+  for (var region in stock) {
+    var keys = Array.isArray(stock[region]) ? stock[region] : []
+    for (var k = 0; k < keys.length; k++) candidates.push({ key: keys[k], region: region, id: String(getId(entries[keys[k]])) })
+  }
+
+  var used = {}
+  var out = {}
+  var missing = []
+  function pick(id, region) {
+    var fallback = null
+    for (var c = 0; c < candidates.length; c++) {
+      var candidate = candidates[c]
+      if (used[candidate.key] || candidate.id !== id) continue
+      if (candidate.region === region) return candidate.key
+      if (!fallback) fallback = candidate.key
+    }
+    return fallback
+  }
+
+  for (var i = 0; i < SECTIONS.length; i++) {
+    var section = SECTIONS[i]
+    var list = layout && Array.isArray(layout[section]) ? layout[section] : []
+    out[section] = []
+    for (var j = 0; j < list.length; j++) {
+      var id = String(getId(list[j]))
+      var key = pick(id, section)
+      if (key) {
+        used[key] = true
+        out[section].push(key)
+      } else if (missing.indexOf(id) === -1) {
+        missing.push(id)
+      }
+    }
+  }
+  return { sections: out, missing: missing }
+}
+
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     orientationOf: orientationOf,
@@ -154,6 +203,7 @@ if (typeof module !== "undefined" && module.exports) {
     parse: parse,
     layoutFor: layoutFor,
     describeScreen: describeScreen,
-    layoutIds: layoutIds
+    layoutIds: layoutIds,
+    keysFor: keysFor
   }
 }

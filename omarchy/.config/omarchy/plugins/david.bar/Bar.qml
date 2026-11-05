@@ -18,12 +18,14 @@ import "ScreenLayouts.js" as ScreenLayouts
 //
 // Relied-on stock facts, all checked at runtime and logged when missing:
 //   - Quickshell's `Variants.instances` and `PanelWindow.screen`;
-//   - each surface lays its widgets out from three objects a few levels below
-//     the panel content: two module lists carrying `entries` + `region`
-//     ("left" / "right") and a center item carrying `entries`, `hasAnchor` and
-//     `anchorEntry`;
-//   - `layoutEntries(region)`, `normalizeLayout(layout)`, `entryIndex()` and
-//     `centerAnchor` on the stock bar root.
+//   - each surface lays its widgets out through ModuleList objects below the
+//     panel content, each carrying `keys`, `region` and `fixedEdge`; the
+//     center ones sit in an item whose `active` says whether it is drawn;
+//   - `layoutWidgets` ({ sections, entries }), `normalizeLayout(layout)` and
+//     `entryId(entry)` on the stock bar root.
+// Every widget lives in one per-surface pool built from `bar.layout`, so a
+// screen layout can only show widgets that `bar.layout` also lists; they keep
+// their `bar.layout` settings.
 Item {
   id: root
 
@@ -204,20 +206,20 @@ Item {
     return panels
   }
 
+  readonly property var regions: ["left", "centerBegin", "center", "centerEnd", "right"]
+
+  // Every module list on a surface, by region. The tray's list lives in its
+  // drawer, outside the panel content, and is never rebound.
   function findSections(item, depth, found) {
-    if (!item || depth > 6) return found
+    if (!item || depth > 12) return found
     var kids = item.children
     var n = kids ? kids.length : 0
     for (var i = 0; i < n; i++) {
       var child = kids[i]
       if (!child) continue
-      if (("entries" in child) && ("hasAnchor" in child) && ("anchorEntry" in child)) {
-        found.center = child
-        continue
-      }
-      if (("entries" in child) && ("region" in child)) {
+      if (("keys" in child) && ("region" in child) && ("fixedEdge" in child)) {
         var region = String(child.region || "")
-        if (region === "left" || region === "right") found[region] = child
+        if (root.regions.indexOf(region) !== -1) found[region].push(child)
         continue
       }
       findSections(child, depth + 1, found)
@@ -225,27 +227,48 @@ Item {
     return found
   }
 
+  // The stock center lists show nothing while their center sections are not
+  // drawn (a display notch moves them beside the right section).
+  function drawn(section) {
+    for (var p = section.parent, depth = 0; p && depth < 3; p = p.parent, depth++) {
+      if (("active" in p) && ("pool" in p)) return p.active !== false
+    }
+    return true
+  }
+
   // Sections carrying our bindings. A binding reads the matching screen
-  // layout and falls back to the stock `layoutEntries(region)` when no entry
+  // layout and falls back to the stock `layoutWidgets.sections` when no entry
   // matches any more, so a section is bound at most once. Sections on screens
   // that never matched are never touched, which keeps the primary monitor's
   // widgets from being rebuilt at startup.
-  //
-  // Only `entries` is rebound. The center section's `hasAnchor` derives from
-  // it, so `bar.centerAnchor` anchors a screen layout's center only when that
-  // layout lists the anchor widget; otherwise the center group is centered as
-  // a whole. Its read-only `anchorEntry` keeps naming the stock layout's
-  // anchor entry, so an anchored widget takes its inline settings from
-  // `bar.layout`, and the stock layout's anchor stays loaded but hidden on
-  // screens whose layout omits it.
   property var bound: []
+  property var warnedMissing: ({})
+
+  function screenKeys(screen) {
+    var layout = ScreenLayouts.layoutFor(root.screenLayouts, screen)
+    if (!layout || !root.inner) return null
+    var picked = ScreenLayouts.keysFor(root.inner.layoutWidgets, layout.layout, function(entry) {
+      return typeof root.inner.entryId === "function" ? root.inner.entryId(entry) : (entry && entry.id) || ""
+    })
+    var label = layout.name + ":" + picked.missing.join(",")
+    // Before the stock bar has its config the pool is empty; nothing is missing yet.
+    var poolReady = root.inner.layoutWidgets && root.inner.layoutWidgets.keys && root.inner.layoutWidgets.keys.length > 0
+    if (poolReady && picked.missing.length > 0 && !root.warnedMissing[label]) {
+      root.warnedMissing[label] = true
+      console.warn("david.bar: screen layout " + layout.name + " lists " + picked.missing.join(", ")
+        + ", which bar.layout does not; only widgets in bar.layout can be shown")
+    }
+    return picked.sections
+  }
 
   function bindSection(section, screen, region) {
-    section.entries = Qt.binding(function() {
+    section.keys = Qt.binding(function() {
       var revision = root.screenLayoutsRevision
-      var layout = ScreenLayouts.layoutFor(root.screenLayouts, screen)
-      if (layout) return layout.layout[region]
-      return root.inner && typeof root.inner.layoutEntries === "function" ? root.inner.layoutEntries(region) : []
+      if (!root.drawn(section)) return []
+      var keys = root.screenKeys(screen)
+      if (keys) return keys[region] || []
+      var stock = root.inner ? root.inner.layoutWidgets.sections[region] : null
+      return Array.isArray(stock) ? stock : []
     })
   }
 
@@ -254,23 +277,23 @@ Item {
   function applyPanel(panel, stillBound) {
     var screen = panel.screen
     var layout = ScreenLayouts.layoutFor(root.screenLayouts, screen)
-    var sections = findSections(panel.contentItem, 0, { left: null, center: null, right: null })
-    var regions = ["left", "center", "right"]
+    var found = { left: [], centerBegin: [], center: [], centerEnd: [], right: [] }
+    findSections(panel.contentItem, 0, found)
     var missing = []
-    for (var r = 0; r < regions.length; r++) {
-      var region = regions[r]
-      var section = sections[region]
-      if (!section) {
-        missing.push(region)
-        continue
-      }
-      if (bound.indexOf(section) !== -1) {
+    for (var r = 0; r < root.regions.length; r++) {
+      var region = root.regions[r]
+      var sections = found[region]
+      if (sections.length === 0) missing.push(region)
+      for (var s = 0; s < sections.length; s++) {
+        var section = sections[s]
+        if (bound.indexOf(section) !== -1) {
+          stillBound.push(section)
+          continue
+        }
+        if (!layout) continue
+        bindSection(section, screen, region)
         stillBound.push(section)
-        continue
       }
-      if (!layout) continue
-      bindSection(section, screen, region)
-      stillBound.push(section)
     }
     if (layout && missing.length > 0) {
       console.warn("david.bar: could not find the " + missing.join("/") + " module list on "

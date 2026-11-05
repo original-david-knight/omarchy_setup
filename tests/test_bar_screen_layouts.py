@@ -73,7 +73,9 @@ class ScreenLayoutModelTests(unittest.TestCase):
         self.assertEqual([layout["name"] for layout in parsed], ["sides"])
         self.assertEqual(parsed[0]["layout"], {
             "left": [{"id": "omarchy.workspaces"}],
+            "centerBegin": [],
             "center": [{"id": "omarchy.clock", "format": "HH:mm"}],
+            "centerEnd": [],
             "right": [],
         })
         self.assertEqual(len(warnings), 3)
@@ -95,8 +97,29 @@ class ScreenLayoutModelTests(unittest.TestCase):
     def test_desktop_profile_gives_portrait_screens_a_compact_layout(self):
         body = ("const l = S.parse(V.bar, m => { throw new Error(m) });"
                 "return V.screens.map(s => { const r = S.layoutFor(l, s); return r ? S.layoutIds(r.layout) : null })")
-        sides = [["omarchy.workspaces", "omarchy.clock"]] * 2
+        sides = [["david.workspaces", "omarchy.clock"]] * 2
         self.assertEqual(self.evaluate(body, bar=desktop_bar(), screens=[LEFT, RIGHT, CENTER]), sides + [None])
+
+    def test_keys_for_picks_pool_widgets_by_id(self):
+        # Shape of the stock bar's BarModel.layoutWidgets.
+        widgets = {
+            "sections": {"left": ["ws#1", "menu#2"], "centerBegin": [], "center": ["clock#3", "spacer#4"],
+                         "centerEnd": [], "right": ["power#5", "clock#6"], "tray": []},
+            "entries": {"ws#1": {"id": "david.workspaces"}, "menu#2": {"id": "omarchy.menu"},
+                        "clock#3": {"id": "omarchy.clock"}, "spacer#4": {"id": "omarchy.spacer"},
+                        "power#5": {"id": "omarchy.power"}, "clock#6": {"id": "omarchy.clock"}},
+        }
+        layout = {"left": [{"id": "david.workspaces"}], "center": [{"id": "omarchy.clock"}],
+                  "right": [{"id": "omarchy.clock"}, {"id": "omarchy.weather"}]}
+        result = self.evaluate("return S.keysFor(V.w, S.normalizeLayout(V.l))", w=widgets, l=layout)
+        self.assertEqual(result["sections"], {"left": ["ws#1"], "centerBegin": [], "center": ["clock#3"],
+                                              "centerEnd": [], "right": ["clock#6"]})
+        self.assertEqual(result["missing"], ["omarchy.weather"])
+
+    def test_keys_for_an_empty_pool_shows_nothing(self):
+        result = self.evaluate("return S.keysFor(null, S.normalizeLayout(V.l))", l={"left": ["david.workspaces"]})
+        self.assertEqual(result["sections"]["left"], [])
+        self.assertEqual(result["missing"], ["david.workspaces"])
 
     def test_describe_screen(self):
         self.assertEqual(self.evaluate("return S.describeScreen(V.s)", s=LEFT), "DP-1 1440x2560 portrait (VG27AQL1A)")
@@ -108,7 +131,7 @@ class ProfileConfigTests(unittest.TestCase):
         self.assertEqual(bar["id"], "david.bar")
         self.assertEqual([entry["match"] for entry in bar["screenLayouts"]], ["portrait"])
         portrait = bar["screenLayouts"][0]["layout"]
-        self.assertEqual(layout_ids(portrait), ["omarchy.workspaces", "omarchy.clock"])
+        self.assertEqual(layout_ids(portrait), ["david.workspaces", "omarchy.clock"])
         main_clock = next(entry for entry in bar["layout"]["center"] if entry["id"] == "omarchy.clock")
         self.assertEqual(portrait["center"][0], main_clock)
 
@@ -120,6 +143,28 @@ class ProfileConfigTests(unittest.TestCase):
                         self.assertTrue((PLUGINS / widget / "manifest.json").is_file())
                     else:
                         self.assertTrue(widget.startswith("omarchy."))
+
+    def test_screen_layout_widgets_are_in_the_main_layout(self):
+        # The stock bar builds widgets only for bar.layout; a screen layout
+        # can show those and nothing else.
+        bar = desktop_bar()
+        main = set(layout_ids(bar["layout"]))
+        for entry in bar["screenLayouts"]:
+            for widget in layout_ids(entry["layout"]):
+                with self.subTest(widget=widget):
+                    self.assertIn(widget, main)
+
+    def test_both_profiles_use_global_workspace_numbers(self):
+        for profile in ("desktop", "laptop"):
+            bar = json.loads((ROOT / f"omarchy_{profile}/.config/omarchy/shell.json").read_text())["bar"]
+            ids = set(layout_ids(bar["layout"]))
+            with self.subTest(profile=profile):
+                self.assertIn("david.workspaces", ids)
+                self.assertNotIn("omarchy.workspaces", ids)
+        bindings = (ROOT / "hypr/.config/hypr/bindings.lua").read_text()
+        self.assertIn("o.workspaces.reconcile = function() end", bindings)
+        self.assertIn('o.rebind("SUPER + " .. key', bindings)
+        self.assertNotIn("o.workspaces", (ROOT / "hypr/.config/hypr/monitors.lua").read_text())
 
     def test_laptop_keeps_the_stock_bar(self):
         bar = json.loads((ROOT / "omarchy_laptop/.config/omarchy/shell.json").read_text())["bar"]

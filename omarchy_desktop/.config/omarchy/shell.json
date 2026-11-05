@@ -27,7 +27,29 @@
           "lifeExpectancy": 90
         },
         {
-          "id": "omarchy.keyboard-layout"
+          "id": "omarchy.elsewhen",
+          "cities": [
+            {
+              "name": "Los Angeles",
+              "zone": "America/Los_Angeles"
+            },
+            {
+              "name": "New York",
+              "zone": "America/New_York"
+            },
+            {
+              "name": "London",
+              "zone": "Europe/London"
+            },
+            {
+              "name": "Dubai",
+              "zone": "Asia/Dubai"
+            },
+            {
+              "name": "Tokyo",
+              "zone": "Asia/Tokyo"
+            }
+          ]
         },
         {
           "id": "omarchy.weather"
@@ -41,7 +63,7 @@
           "id": "omarchy.menu"
         },
         {
-          "id": "omarchy.workspaces"
+          "id": "david.workspaces"
         },
         {
           "id": "omarchy.spacer",
@@ -61,6 +83,9 @@
         }
       ],
       "right": [
+        {
+          "id": "omarchy.keyboard-layout"
+        },
         {
           "id": "david.tray",
           "pinned": [
@@ -112,7 +137,10 @@
         {
           "id": "david.security"
         }
-      ]
+      ],
+      "centerBegin": [],
+      "centerEnd": [],
+      "tray": []
     },
     "position": "top",
     "screenLayouts": [
@@ -122,7 +150,7 @@
         "layout": {
           "left": [
             {
-              "id": "omarchy.workspaces"
+              "id": "david.workspaces"
             }
           ],
           "center": [

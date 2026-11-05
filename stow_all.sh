@@ -256,6 +256,26 @@ select_theme() {
   fi
 }
 
+# A running Omarchy shell that sees shell.json vanish while the profile package
+# is relinked writes its stock defaults back through the new link, straight
+# into this repository. Snapshot the tracked layout and put it back if that
+# happens (the shell reloads it on its own).
+shell_config_source="$repo_dir/omarchy_$profile/.config/omarchy/shell.json"
+shell_config_snapshot=$(mktemp)
+trap 'rm -f -- "$shell_config_snapshot"' EXIT
+cp -- "$shell_config_source" "$shell_config_snapshot"
+
+protect_shell_config() {
+  if pgrep -u "$(id -u)" -f 'quickshell.*omarchy/shell' >/dev/null 2>&1; then
+    # The shell's write lands a couple of seconds after the link reappears.
+    sleep "${OMARCHY_SETUP_SHELL_SETTLE:-3}"
+  fi
+  if ! cmp -s -- "$shell_config_snapshot" "$shell_config_source"; then
+    echo "The running shell rewrote $shell_config_source during deployment; restoring the tracked layout." >&2
+    cat -- "$shell_config_snapshot" >"$shell_config_source"
+  fi
+}
+
 # Unstow mutually exclusive packages first so switching machine profiles does
 # not leave links from the previous profile behind.
 if (( ! bar_only )); then
@@ -296,6 +316,7 @@ else
   stow_package omarchy_laptop
 fi
 
+protect_shell_config
 validate_bar_setup
 if (( ! bar_only )); then
   python3 "$repo_dir/scripts/configure_ssh.py" --target "$target_home"

@@ -28,7 +28,7 @@ Everything lives under `bar` in the profile's `shell.json`
       "name": "portrait side monitors",
       "match": "portrait",
       "layout": {
-        "left": [ { "id": "omarchy.workspaces" } ],
+        "left": [ { "id": "david.workspaces" } ],
         "center": [ { "id": "omarchy.clock", "format": "HH:mm" } ],
         "right": []
       }
@@ -56,11 +56,15 @@ enable`, and drag-to-reorder only ever change `bar.layout`. Edit
 is ignored, with a warning in the shell log, because the stock bar would
 otherwise reorder `bar.layout` for the center monitor.
 
-`bar.centerAnchor` still applies: when a screen layout's center lists the
-anchor widget it is pinned to the exact center, otherwise that center group is
-centered as a whole. The anchored widget takes its inline settings from
-`bar.layout`, and the stock layout's anchor stays loaded but hidden on screens
-whose layout omits it, which is why the desktop keeps a spacer as its anchor.
+Since Omarchy 4.5 the stock bar builds one widget per `bar.layout` entry into
+a pool that each surface shares, and every section shows a list of pool keys.
+So a screen layout can only show widgets that `bar.layout` also lists: each
+entry picks the pool widget with the same id (from the same section first) and
+keeps its `bar.layout` settings, so inline settings in a screen layout are
+ignored. An id missing from `bar.layout` is skipped with a warning in the
+shell log; `tests/test_bar_screen_layouts.py` checks this for the desktop
+profile. A screen layout may also give `centerBegin` and `centerEnd`; omitted
+sections are empty on that screen. The 4.5 bar has no `bar.centerAnchor`.
 
 ## Deploying and enabling elsewhere
 
@@ -93,7 +97,8 @@ python3 -m unittest tests.test_bar_screen_layouts
 
 If the stock bar fails to load, a desktop notification names the reason and
 `status` reports `failed:`. If an Omarchy update renames the bar internals the
-wrapper looks for (module lists carrying `entries` with `region`, and the
-center item carrying `entries`, `hasAnchor`, and `anchorEntry`), the log says
-`could not find the ... module list` and that screen shows the stock layout;
-adjust `findSections` in `Bar.qml` to the new names.
+wrapper relies on (`ModuleList` objects carrying `keys`, `region`, and
+`fixedEdge`, the center ones inside an item with `active` and `pool`, and
+`layoutWidgets` on the bar root), the log says `could not find the ... module
+list` and that screen shows the stock layout; adjust `findSections` in
+`Bar.qml` and `keysFor` in `ScreenLayouts.js` to the new shape.

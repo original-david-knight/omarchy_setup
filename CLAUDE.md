@@ -64,7 +64,8 @@ font scales the stock 26 px bar to 39 px.
 
 The desktop profile selects `david.bar` as its bar option (`bar.id`). That
 plugin runs the untouched stock bar and rebinds the module lists of screens
-matched by `bar.screenLayouts`, so the portrait side monitors show only
+matched by `bar.screenLayouts` (which may only use widgets also in
+`bar.layout`), so the portrait side monitors show only
 workspaces and the clock while the center monitor keeps `bar.layout`. Edit
 `screenLayouts` by hand; the `omarchy bar` commands and widget drags only touch
 `bar.layout`. See `docs/bar-screen-layouts.md`.
@@ -83,6 +84,15 @@ the existing project is the default. The shared form and authenticated
 The always-expanded `david.tray` clone is tracked alongside the task, Jira,
 GitHub, and podcast widgets, so every custom ID in either layout has a matching
 plugin in the public stow package. `stow_all.sh` validates that invariant.
+
+Both profiles keep global workspace numbers instead of Omarchy 4.5's
+per-monitor blocks of ten; the desktop pins 1-5 center, 6-7 right, and 8-9
+left in `monitors.lua`. `bindings.lua` disables `o.workspaces.reconcile` and
+rebinds Super+N with `o.rebind` (plain `o.bind` adds a second binding next to
+the stock one). Both bar layouts use `david.workspaces`, a clone of the stock
+widget that lists the workspaces on each monitor under their real numbers.
+`stow_all.sh` restores the tracked `shell.json` if a running shell rewrites it
+with defaults while the profile package is relinked.
 
 `david.podcasts` is the unified **Listening** widget: Spotify through MPRIS,
 the existing Everything podcast player, and three independently controlled

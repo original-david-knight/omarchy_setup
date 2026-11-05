@@ -147,3 +147,32 @@ if laptop_bindings then
   laptop_bindings:close()
   dofile(laptop_bindings_path)
 end
+
+-- Dictation keys from before Alt + Space and Right Alt became the defaults.
+-- Remove these lines to give the keys back to applications.
+if o.dictation_installed and o.dictation_installed() then
+  o.bind("SUPER + CTRL + X", "Toggle dictation", "omarchy-dictation toggle")
+  o.bind_hold("F9", "Start dictation (push-to-talk)", "omarchy-dictation start", "Stop dictation (push-to-talk)", "omarchy-dictation stop")
+end
+
+-- Omarchy 4.5 numbers workspaces per monitor (Super + 3 = slot 3 of the focused
+-- monitor, in blocks of ten). Keep global numbers instead, on the desktop and
+-- laptop alike: the desktop pins 1-5, 6-7 and 8-9 to its monitors in
+-- monitors.lua, and a laptop places them wherever they are opened. Stop the
+-- reconciler, which would renumber workspaces into monitor blocks, and bind
+-- the number keys straight to workspace ids. o.rebind replaces the stock
+-- binding; o.bind would add a second one that still fires. Both bar layouts
+-- use david.workspaces to match.
+o.workspaces.reconcile = function() end
+
+for workspace = 1, 10 do
+  local key = "code:" .. tostring(workspace + 9)
+  local id = tostring(workspace)
+  o.rebind("SUPER + " .. key, "Switch to workspace " .. workspace, hl.dsp.focus({ workspace = id }))
+  o.rebind("SUPER + SHIFT + " .. key, "Move window to workspace " .. workspace, hl.dsp.window.move({ workspace = id }))
+  o.rebind("SUPER + SHIFT + ALT + " .. key, "Move window silently to workspace " .. workspace, hl.dsp.window.move({ workspace = id, follow = false }))
+end
+
+for _, direction in ipairs({ { "LEFT", "l", "left" }, { "RIGHT", "r", "right" }, { "UP", "u", "up" }, { "DOWN", "d", "down" } }) do
+  o.rebind("SUPER + SHIFT + ALT + " .. direction[1], "Move workspace to " .. direction[3] .. " monitor", hl.dsp.workspace.move({ monitor = direction[2] }))
+end
