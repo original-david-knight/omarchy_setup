@@ -134,7 +134,7 @@ victim. See `docs/herdr-oom-guard.md`.
 
 `david.agents` replaces the stock `omarchy.agents` in both layouts. It loads
 the untouched stock Agents panel by URL and adds an **Account** row to its
-Claude tab that switches Claude Code between saved subscription logins through
+Claude Code section that switches Claude Code between saved subscription logins through
 `claude-account` (`bin`). Saved logins live in
 `~/.local/state/claude-accounts/`, never in the repo. See
 `docs/claude-accounts.md`.

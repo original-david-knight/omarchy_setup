@@ -23,11 +23,17 @@ Item {
   property int contentWidth: 390
   property int contentHeight: 760
   default property alias contentItem: holder.children
+  property Component content: null
+  property bool contentRequested: false
+  onOpenChanged: if (open) contentRequested = true
+  readonly property Item loadedContent: loader.item
+  readonly property real loadedContentHeight: loader.item ? loader.item.implicitHeight : 0
   function fittedContentWidth(width, cap) { return Math.round(Math.min(width, cap || width)) }
   function fittedContentHeight(height, cap) { return Math.round(Math.min(height, cap || height)) }
   x: 0; y: 70; width: contentWidth; height: contentHeight
   visible: open
   Item { id: holder; anchors.fill: parent }
+  Loader { id: loader; anchors.fill: parent; active: contentRequested; sourceComponent: content }
 }
 """
 

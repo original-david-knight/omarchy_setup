@@ -7,8 +7,8 @@ subscription login changes.
 
 ## Using it
 
-Open the Agents panel (the robot icon), pick the **Claude Code** tab, and use
-the **Account** row under the subscription switch:
+Open the Agents panel (the robot icon) and use the **Account** row under
+**Claude Code**:
 
 - Click an account to switch to it. The limits below (session, weekly, and
   model windows) refresh for the new account within a second.
@@ -64,11 +64,21 @@ file says when. Re-adding the account replaces it.
 
 `david.agents` replaces `omarchy.agents` in both bar layouts. It loads the
 installed stock `Panel.qml` by URL, as the shell does, and changes nothing in
-it; the same technique as `david.bar`. When the panel first opens, the wrapper
-finds the stock content column by its `PanelHero`, appends the Account row,
-and re-appends the stock sections after it so the row sits below the
-subscription switch. If a future Omarchy release reshapes the panel, the row
-is skipped with a warning in the shell log and the stock panel keeps working.
+it; the same technique as `david.bar`. The panel lists every agent on one page,
+one section each. Whenever the stock panel builds Claude's section, the wrapper
+appends the Account row to it and re-appends the stock rows after the section's
+name, so the row sits between the name and the limits. If a future Omarchy
+release reshapes the panel, the row is skipped with a warning in the shell log
+and the stock panel keeps working.
+
+Omarchy 4.5 ships its own account switch (the panel's + button and
+`omarchy agent account`). It gives each added account a separate
+`CLAUDE_CONFIG_DIR`, which only reaches `claude` launched through Omarchy's mise
+wrapper; here `claude` is `~/.local/bin/claude`. Add accounts with this row's
+**+ Add**, not the stock +.
+
+The shell watches its plugin folders, which hold only symlinks, so editing the
+linked `Panel.qml` does not reload it. Run `omarchy restart shell`.
 
 Extending the stock panel as a QML type does not work in the live shell: the
 shell rewrites its files to `qs://` URLs and the stock panel's inline

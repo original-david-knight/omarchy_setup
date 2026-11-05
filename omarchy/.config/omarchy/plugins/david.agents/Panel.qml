@@ -10,9 +10,8 @@ import qs.Ui
 // Copying the stock panel would freeze 1700 lines at one Omarchy release, so
 // this wrapper instantiates the installed Panel.qml by URL, exactly as
 // omarchy-shell would (the david.bar technique), and adds a single row. The
-// row is declared here and moved into the stock panel's content column the
-// first time the panel opens, just below the subscription switch, and only
-// shows while the Claude tab is selected. Every switch goes through
+// row is declared here and moved into the stock panel's Claude section, just
+// below its name, whenever that section is built. Every switch goes through
 // ~/bin/claude-account, which owns the credential files; see
 // docs/claude-accounts.md.
 //
@@ -20,9 +19,14 @@ import qs.Ui
 // rewrites its own files to qs:// URLs, and the stock panel's inline
 // components ("DayRow is not a type") fail to resolve when it is a base type.
 //
+// Stock 4.5 has its own account switch, but it gives each account a separate
+// CLAUDE_CONFIG_DIR that only reaches `claude` launched through its mise
+// wrapper; claude-account swaps the login inside the one ~/.claude instead.
+//
 // Relied-on stock facts, checked at runtime and logged when missing: the
-// content column holds a PanelHero (the only item with `iconComponent`), and
-// the subscription switch is the Row after it carrying `cellWidth`. Tab from
+// panel exposes `providerSections`, a Repeater with one Column per agent, and
+// a section's name row is its only child carrying `lit`. Sections are rebuilt
+// whenever the agent list changes, so the row is placed again each time. Tab from
 // this panel to its bar neighbors does not work, because the stock panel
 // asks the bar for its own slot, which belongs to this wrapper.
 Item {
@@ -52,14 +56,18 @@ Item {
   property var accounts: []
   property string accountError: ""
   property bool switching: false
-  readonly property bool claudeSelected: !!inner && !!inner.provider && inner.provider.providerId === "claude"
   readonly property color foreground: inner ? inner.foreground : Commons.Color.foreground
   readonly property color urgent: inner ? inner.urgent : Commons.Color.urgent
   readonly property string fontFamily: inner ? inner.fontFamily : Style.font.family
 
   onOpenedChanged: if (opened) {
-    placeAccountRow()
+    Qt.callLater(placeAccountRow)
     listAccounts()
+  }
+
+  Connections {
+    target: agents.inner ? agents.inner.providerSections : null
+    function onItemAdded() { Qt.callLater(agents.placeAccountRow) }
   }
 
   Component.onCompleted: {
@@ -115,47 +123,37 @@ Item {
 
   // ------------------------------------------------------------- placement
 
-  function findHero(object, depth) {
-    if (!object || depth > 12) return null
-    if (object.iconComponent !== undefined && object.title !== undefined) return object
-    // An Item's data covers its children; a window only exposes contentItem.
-    var lists = [object.data || object.children]
-    if (object.contentItem) lists.push([object.contentItem])
-    for (var l = 0; l < lists.length; l++) {
-      var list = lists[l]
-      if (!list) continue
-      for (var i = 0; i < list.length; i++) {
-        if (list[i] === accountRow) continue
-        var found = findHero(list[i], depth + 1)
-        if (found) return found
-      }
+  function claudeSection() {
+    var sections = inner ? inner.providerSections : null
+    if (!sections) return null
+    for (var i = 0; i < sections.count; i++) {
+      var section = sections.itemAt(i)
+      if (section && section.provider && section.provider.providerId === "claude") return section
     }
     return null
   }
 
   function placeAccountRow() {
-    if (accountRow.placed) return
-    var hero = findHero(inner, 0)
-    if (!hero || !hero.parent) {
-      console.warn("david.agents: stock agents panel has no hero; account switch not shown")
-      return
-    }
-    var column = hero.parent
+    var section = claudeSection()
+    if (!section || accountRow.parent === section) return
     var siblings = []
-    var anchorIndex = 0
-    for (var i = 0; i < column.children.length; i++) {
-      siblings.push(column.children[i])
-      if (siblings[i] === hero || siblings[i].cellWidth !== undefined) anchorIndex = i
+    var anchorIndex = -1
+    for (var i = 0; i < section.children.length; i++) {
+      siblings.push(section.children[i])
+      if (anchorIndex < 0 && siblings[i].lit !== undefined) anchorIndex = i
+    }
+    if (anchorIndex < 0) {
+      console.warn("david.agents: stock Claude section has no name row; account switch not shown")
+      return
     }
     // A Column lays out in child order, and Item.stackAfter is not callable
     // from QML: append the row, then re-append everything that follows the
     // anchor so it lands below the row again.
-    accountRow.parent = column
+    accountRow.parent = section
     for (var j = anchorIndex + 1; j < siblings.length; j++) {
       siblings[j].parent = agents
-      siblings[j].parent = column
+      siblings[j].parent = section
     }
-    accountRow.placed = true
   }
 
   Process {
@@ -188,8 +186,7 @@ Item {
   Column {
     id: accountRow
     objectName: "accountRow"
-    property bool placed: false
-    visible: placed && agents.claudeSelected && agents.accounts.length > 0
+    visible: !!parent && parent !== agents && agents.accounts.length > 0
     width: parent ? parent.width : 0
     spacing: Style.spacing.sm
 
