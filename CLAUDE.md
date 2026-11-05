@@ -6,6 +6,9 @@ deploys each top-level package into the user's home directory.
 Follow [AGENTS.md](AGENTS.md) for the public/private setup boundary, especially
 Everything App source provisioning, credentials, and account sign-in steps.
 
+We generally commit straight to `main` in this repo rather than working on
+branches. It is not a hard rule: use a branch when a change warrants one.
+
 ## Commands
 
 ```bash
