@@ -288,7 +288,7 @@ unstow_package omarchy_laptop
 
 shared_packages=(omarchy)
 if (( ! bar_only )); then
-  shared_packages=(bash tmux zellij herdr herdr_app omarchy hypr starship bin vscode yazi desktop)
+  shared_packages=(bash tmux zellij herdr herdr_app omarchy hypr starship bin vscode yazi spotify desktop)
 fi
 for package in "${shared_packages[@]}"; do
   stow_package "$package"

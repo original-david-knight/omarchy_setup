@@ -43,7 +43,7 @@ for plain output.
 ## Stow packages
 
 Shared packages are `bash`, `tmux`, `zellij`, `herdr`, `herdr_app`, `omarchy`, `hypr`,
-`starship`, `ssh`, `bin`, `vscode`, and `yazi`.
+`starship`, `ssh`, `bin`, `vscode`, `yazi`, and `spotify`.
 
 The selected machine profile adds:
 
