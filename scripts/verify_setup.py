@@ -43,6 +43,26 @@ class Checks:
         return 1 if self.failed else 3 if self.pending else 0
 
 
+def verify_tailscale(checks):
+    remedy = "rerun ./install_services.sh"
+    checks.command("sshd.service enabled", ["systemctl", "is-enabled", "--quiet", "sshd.service"], remedy)
+    checks.command("sshd.service active", ["systemctl", "is-active", "--quiet", "sshd.service"], remedy)
+    if not checks.command("tailscaled.service active", ["systemctl", "is-active", "--quiet", "tailscaled.service"], remedy):
+        return
+    # Check local configuration before the private sign-in phase. Requiring a
+    # logged-in tailnet here would block the wizard before it can reach sign-in.
+    try:
+        result = subprocess.run(["tailscale", "debug", "prefs"], text=True, capture_output=True, timeout=40)
+        prefs = json.loads(result.stdout) if result.returncode == 0 else None
+        if not isinstance(prefs, dict):
+            raise ValueError("invalid Tailscale preferences")
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        checks.check("Tailscale SSH preferences", False, remedy)
+        return
+    checks.check("Tailscale SSH interception disabled", prefs.get("RunSSH") is False, remedy)
+    checks.check("Tailscale incoming connections allowed", prefs.get("ShieldsUp") is False, remedy)
+
+
 def verify(checks, home):
     checks.command("supported Omarchy baseline", ["bash", ROOT / "check_baseline.sh"], "complete an Omarchy 4.x install")
     packages = []
@@ -74,8 +94,9 @@ def verify(checks, home):
     for command, expected, label in [(["xdg-mime", "query", "default", "x-scheme-handler/https"], "google-chrome.desktop", "default browser"), (["xdg-mime", "query", "default", "inode/directory"], "yazi.desktop", "default file manager")]:
         result = subprocess.run(command, text=True, capture_output=True)
         checks.check(label, result.returncode == 0 and result.stdout.strip() == expected, "run ./stow_all.sh")
-    for unit in ("tailscaled.service", "sshd.service", "postgresql.service", "bluetooth.service", "ensure-razer-basilisk-mouse.service", "boot-forensics.service"):
+    for unit in ("tailscaled.service", "postgresql.service", "bluetooth.service", "ensure-razer-basilisk-mouse.service", "boot-forensics.service"):
         checks.command(unit + " enabled", ["systemctl", "is-enabled", "--quiet", unit])
+    verify_tailscale(checks)
     graphical = checks.command("graphical session", ["systemctl", "--user", "is-active", "--quiet", "graphical-session.target"], "log in graphically and run ./activate.sh", pending=True)
     for unit in ("primary-selection-sync.service", "voxtype.service", "omarchy-tailscale-receive.service", "tailscale-keepalive.service"):
         checks.command(unit + " enabled", ["systemctl", "--user", "is-enabled", "--quiet", unit])

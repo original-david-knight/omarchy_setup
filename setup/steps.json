@@ -345,10 +345,17 @@
     },
     {
       "id": "install_services",
-      "label": "Enable desktop support services",
+      "label": "Enable key-based SSH over Tailscale and desktop support services",
       "script": "install_services.sh",
+      "inputs": [
+        "scripts/configure_ssh.py",
+        "scripts/configure_sshd.sh",
+        "ssh/.ssh/authorized_keys",
+        "system/etc/ssh/sshd_config.d/10-omarchy-setup.conf"
+      ],
       "requires": [
         "public.check_baseline",
+        "public.install_core",
         "public.update_omarchy"
       ]
     }

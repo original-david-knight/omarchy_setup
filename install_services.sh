@@ -2,16 +2,14 @@
 set -euo pipefail
 repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 sudo systemctl enable --now tailscaled.service
-sudo tailscale set --operator="$(id -un)"
-# New devices still need tailscale login; verification reports that separately.
-# Accept SSH only over Tailscale, so other devices on a shared network cannot
-# reach sshd. Add the tailnet rule before removing the open one.
-if command -v ufw >/dev/null; then
-  sudo ufw allow in on tailscale0 to any port 22 proto tcp comment omarchy-setup-ssh
-  sudo ufw delete allow 22/tcp
-fi
-# Start sshd only after the firewall limits it to the tailnet.
-sudo systemctl enable --now sshd.service
+# Key-only OpenSSH, reachable only over Tailscale (scripts/configure_sshd.sh).
+python3 "$repo_dir/scripts/configure_ssh.py" --target "$HOME"
+sudo bash "$repo_dir/scripts/configure_sshd.sh"
+# Set only these preferences, preserving DNS, routes, and exit-node choices.
+# Tailscale SSH would intercept port 22 and can demand a browser check, and
+# shields-up would block every incoming connection while still showing up.
+sudo tailscale set --operator="$(id -un)" --ssh=false --shields-up=false
+# New devices sign in later; tailscale-keepalive prompts until they do.
 sudo install -Dm755 "$repo_dir/system/usr/local/sbin/capture-prev-boot.sh" /usr/local/sbin/capture-prev-boot.sh
 sudo install -Dm644 "$repo_dir/system/etc/systemd/system/boot-forensics.service" /etc/systemd/system/boot-forensics.service
 sudo systemctl daemon-reload

@@ -86,7 +86,7 @@ private phase, after GitHub authentication and the private checkout handoff.
 - Hyprland settings and bindings; desktop/laptop bars and their custom plugins,
   including Bach music controls and the background picker;
   Yazi and its portal/theme hook; terminal/browser/file-manager defaults;
-  voice model/configuration; primary-selection bridge; Tailscale,
+  voice model/configuration; primary-selection bridge; Tailscale with incoming SSH,
   Bluetooth, mouse recovery, and boot-forensics services; initial Plymouth art.
 
 Dropbox is currently excluded from installation, bar layouts, account sign-in,
@@ -122,6 +122,14 @@ SSH uses a preserved top-level config with `Include ~/.ssh/config.d/*.conf`.
 Public GitHub settings belong to `10-omarchy-public.conf`; the private setup
 owns `00-private.conf` and work/Render identities. Neither setup replaces the
 other's hosts. Existing authorized keys are retained.
+
+`install_services.sh` sets up key-only OpenSSH reachable only over Tailscale:
+the bundled authorized keys (existing keys kept), a drop-in that disables
+password and keyboard-interactive logins, and a UFW rule for port 22 on
+`tailscale0`. It turns off Tailscale SSH and shields-up, so OpenSSH keys work
+without a browser check. `./verify.sh` checks all of this before sign-in;
+`tailscale-keepalive` keeps the node up afterwards (see
+`docs/tailscale-keepalive.md`).
 
 For a file deployment preview, use a disposable target and disable activation:
 
