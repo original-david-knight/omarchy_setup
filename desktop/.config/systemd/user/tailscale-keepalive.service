@@ -1,0 +1,13 @@
+[Unit]
+Description=Keep Tailscale up and alert when it needs a login
+Documentation=file://%h/omarchy_setup/docs/tailscale-keepalive.md
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=%h/bin/tailscale-keepalive run
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=graphical-session.target

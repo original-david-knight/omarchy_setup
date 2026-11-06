@@ -9,7 +9,7 @@ systemctl --user daemon-reload
 # Apply boot-only cleanup (including Herdr snapshots) on the next boot.
 # Do not start it now: an active Herdr session may still be using those files.
 systemctl --user enable systemd-tmpfiles-setup.service
-for unit in primary-selection-sync.service voxtype.service omarchy-tailscale-receive.service; do
+for unit in primary-selection-sync.service voxtype.service omarchy-tailscale-receive.service tailscale-keepalive.service; do
   systemctl --user enable "$unit"
   if systemctl --user is-active --quiet graphical-session.target; then
     systemctl --user start "$unit"

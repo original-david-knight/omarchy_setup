@@ -132,6 +132,12 @@ one runaway process used to take every session with it. The guard trips at
 largest pane process. `herdr-oom-guard check` shows the state and the would-be
 victim. See `docs/herdr-oom-guard.md`.
 
+`tailscale-keepalive` (`bin`, run by `tailscale-keepalive.service` in
+`desktop`, enabled by `activate.sh`) keeps the machine on the tailnet, since
+sshd only listens there. It runs `tailscale up` when Tailscale is stopped and
+posts a critical **Sign in** notification when it needs a login. See
+`docs/tailscale-keepalive.md`.
+
 `david.agents` replaces the stock `omarchy.agents` in both layouts. It loads
 the untouched stock Agents panel by URL and adds an **Account** row to its
 Claude Code section that switches Claude Code between saved subscription logins through

@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# Keep this machine on the tailnet. Every minute: if Tailscale is stopped
+# (`tailscale down`, or WantRunning lost), bring it back up; if it needs a
+# login (node key expired, device removed or logged out in the admin
+# console), post a critical notification with a Sign in button. A login
+# needs the browser, so it cannot be automated without an auth key.
+# Needs `tailscale set --operator=$USER` (install_services.sh). See
+# docs/tailscale-keepalive.md.
+set -uo pipefail
+
+interval=${TAILSCALE_KEEPALIVE_INTERVAL:-60}
+renotify=${TAILSCALE_KEEPALIVE_RENOTIFY:-3600}
+last_notified=0
+
+state() {
+  tailscale status --json 2>/dev/null | jq -r '.BackendState // "Unknown"' 2>/dev/null || echo Unknown
+}
+
+# Start an interactive login and return its URL. Waiting for Running would
+# block until the user signs in, so give up quickly and read the URL.
+login_url() {
+  local url
+  url=$(tailscale status --json 2>/dev/null | jq -r '.AuthURL // ""')
+  if [[ -z $url ]]; then
+    timeout 15 tailscale up --timeout=5s >/dev/null 2>&1
+    url=$(tailscale status --json 2>/dev/null | jq -r '.AuthURL // ""')
+  fi
+  printf '%s\n' "${url:-https://login.tailscale.com/admin/machines}"
+}
+
+notify_login() {
+  local url=$1
+  # notify-send blocks until the notification closes, so wait in the
+  # background and open the browser if Sign in was chosen.
+  (
+    action=$(notify-send -u critical -a Tailscale -i network-vpn \
+      -A open="Sign in" --wait \
+      "Tailscale is logged out" "This machine is off the tailnet. Sign in at $url")
+    [[ $action == open ]] && xdg-open "$url" >/dev/null 2>&1
+  ) &
+}
+
+check() {
+  local s now
+  s=$(state)
+  case $s in
+    Running)
+      last_notified=0
+      ;;
+    Stopped)
+      echo "Tailscale stopped; bringing it up"
+      tailscale up --timeout=30s || echo "tailscale up failed" >&2
+      ;;
+    NeedsLogin|NeedsMachineAuth)
+      now=$(date +%s)
+      if (( now - last_notified >= renotify )); then
+        url=$(login_url)
+        echo "Tailscale needs login: $url"
+        notify_login "$url"
+        last_notified=$now
+      fi
+      ;;
+    *)
+      # Starting, NoState, or tailscaled not answering: transient, and
+      # systemd restarts tailscaled itself on failure.
+      ;;
+  esac
+}
+
+case ${1:-run} in
+  run)
+    while true; do
+      check
+      sleep "$interval"
+    done
+    ;;
+  check)
+    s=$(state)
+    echo "$s"
+    [[ $s == Running ]]
+    ;;
+  *)
+    echo "usage: tailscale-keepalive [run|check]" >&2
+    exit 2
+    ;;
+esac

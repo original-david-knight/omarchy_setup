@@ -77,10 +77,11 @@ def verify(checks, home):
     for unit in ("tailscaled.service", "sshd.service", "postgresql.service", "bluetooth.service", "ensure-razer-basilisk-mouse.service", "boot-forensics.service"):
         checks.command(unit + " enabled", ["systemctl", "is-enabled", "--quiet", unit])
     graphical = checks.command("graphical session", ["systemctl", "--user", "is-active", "--quiet", "graphical-session.target"], "log in graphically and run ./activate.sh", pending=True)
-    for unit in ("primary-selection-sync.service", "voxtype.service", "omarchy-tailscale-receive.service"):
+    for unit in ("primary-selection-sync.service", "voxtype.service", "omarchy-tailscale-receive.service", "tailscale-keepalive.service"):
         checks.command(unit + " enabled", ["systemctl", "--user", "is-enabled", "--quiet", unit])
         if graphical:
             checks.command(unit + " active", ["systemctl", "--user", "is-active", "--quiet", unit])
+    checks.command("Tailscale running", [home / "bin/tailscale-keepalive", "check"], "run tailscale up and sign in", pending=True)
     if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
         result = subprocess.run(["hyprctl", "configerrors"], text=True, capture_output=True)
         checks.check("Hyprland configuration", result.returncode == 0 and not result.stdout.strip())
