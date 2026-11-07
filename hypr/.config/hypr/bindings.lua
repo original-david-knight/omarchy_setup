@@ -162,17 +162,20 @@ end
 -- reconciler, which would renumber workspaces into monitor blocks, and bind
 -- the number keys straight to workspace ids. o.rebind replaces the stock
 -- binding; o.bind would add a second one that still fires. Both bar layouts
--- use david.workspaces to match.
-o.workspaces.reconcile = function() end
+-- use david.workspaces to match. Omarchy before 4.5 has no o.workspaces or
+-- o.rebind and already numbers workspaces globally, so skip this there.
+if o.workspaces and o.rebind then
+  o.workspaces.reconcile = function() end
 
-for workspace = 1, 10 do
-  local key = "code:" .. tostring(workspace + 9)
-  local id = tostring(workspace)
-  o.rebind("SUPER + " .. key, "Switch to workspace " .. workspace, hl.dsp.focus({ workspace = id }))
-  o.rebind("SUPER + SHIFT + " .. key, "Move window to workspace " .. workspace, hl.dsp.window.move({ workspace = id }))
-  o.rebind("SUPER + SHIFT + ALT + " .. key, "Move window silently to workspace " .. workspace, hl.dsp.window.move({ workspace = id, follow = false }))
-end
+  for workspace = 1, 10 do
+    local key = "code:" .. tostring(workspace + 9)
+    local id = tostring(workspace)
+    o.rebind("SUPER + " .. key, "Switch to workspace " .. workspace, hl.dsp.focus({ workspace = id }))
+    o.rebind("SUPER + SHIFT + " .. key, "Move window to workspace " .. workspace, hl.dsp.window.move({ workspace = id }))
+    o.rebind("SUPER + SHIFT + ALT + " .. key, "Move window silently to workspace " .. workspace, hl.dsp.window.move({ workspace = id, follow = false }))
+  end
 
-for _, direction in ipairs({ { "LEFT", "l", "left" }, { "RIGHT", "r", "right" }, { "UP", "u", "up" }, { "DOWN", "d", "down" } }) do
-  o.rebind("SUPER + SHIFT + ALT + " .. direction[1], "Move workspace to " .. direction[3] .. " monitor", hl.dsp.workspace.move({ monitor = direction[2] }))
+  for _, direction in ipairs({ { "LEFT", "l", "left" }, { "RIGHT", "r", "right" }, { "UP", "u", "up" }, { "DOWN", "d", "down" } }) do
+    o.rebind("SUPER + SHIFT + ALT + " .. direction[1], "Move workspace to " .. direction[3] .. " monitor", hl.dsp.workspace.move({ monitor = direction[2] }))
+  end
 end
