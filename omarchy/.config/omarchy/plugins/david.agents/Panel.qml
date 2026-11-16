@@ -10,8 +10,8 @@ import qs.Ui
 // Copying the stock panel would freeze 1700 lines at one Omarchy release, so
 // this wrapper instantiates the installed Panel.qml by URL, exactly as
 // omarchy-shell would (the david.bar technique), and adds a single row. The
-// row is declared here and moved into the stock panel's Claude section, just
-// below its name, whenever that section is built. Every switch goes through
+// row is created inside the stock panel's Claude section, just below its
+// name, whenever that section is built. Every switch goes through
 // ~/bin/claude-account, which owns the credential files; see
 // docs/claude-accounts.md.
 //
@@ -40,6 +40,7 @@ Item {
   readonly property string stockUrl: "file://" + (Quickshell.env("OMARCHY_PATH") || "/usr/share/omarchy")
     + "/shell/plugins/agents/Panel.qml"
   property var inner: null
+  property Item accountRow: null
 
   readonly property bool opened: !!inner && inner.opened === true
   function open() { if (inner) inner.open() }
@@ -198,7 +199,7 @@ Item {
 
   function placeAccountRow() {
     var section = claudeSection()
-    if (!section || accountRow.parent === section) return
+    if (!section || (accountRow && accountRow.parent === section)) return
     var siblings = []
     var anchorIndex = -1
     for (var i = 0; i < section.children.length; i++) {
@@ -212,7 +213,8 @@ Item {
     // A Column lays out in child order, and Item.stackAfter is not callable
     // from QML: append the row, then re-append everything that follows the
     // anchor so it lands below the row again.
-    accountRow.parent = section
+    if (accountRow) accountRow.destroy()
+    accountRow = accountRowComponent.createObject(section)
     for (var j = anchorIndex + 1; j < siblings.length; j++) {
       siblings[j].parent = agents
       siblings[j].parent = section
@@ -277,95 +279,130 @@ Item {
     onTriggered: agents.loadQuota(agents.hoveredEmail)
   }
 
-  Column {
-    id: accountRow
-    objectName: "accountRow"
-    visible: !!parent && parent !== agents && agents.accounts.length > 0
-    width: parent ? parent.width : 0
-    spacing: Style.spacing.sm
+  Component {
+    id: accountRowComponent
 
-    PanelSectionHeader {
-      text: agents.switching ? "ACCOUNT · SWITCHING…" : "ACCOUNT"
-      foreground: agents.foreground
-      fontFamily: agents.fontFamily
-    }
+    Column {
+      objectName: "accountRow"
+      visible: agents.accounts.length > 0
+      width: parent ? parent.width : 0
+      spacing: Style.spacing.sm
 
-    Row {
-      id: accountButtons
-      width: parent.width
-      spacing: Style.spacing.md
-      readonly property int count: agents.accounts.length + 1
-      readonly property real cellWidth: (width - spacing * (count - 1)) / count
+      PanelSectionHeader {
+        text: agents.switching ? "ACCOUNT · SWITCHING…" : "ACCOUNT"
+        foreground: agents.foreground
+        fontFamily: agents.fontFamily
+      }
 
-      Repeater {
-        model: agents.accounts
+      Row {
+        id: accountButtons
+        width: parent.width
+        spacing: Style.spacing.md
+        readonly property int count: agents.accounts.length + 1
+        readonly property real cellWidth: (width - spacing * (count - 1)) / count
+
+        Repeater {
+          model: agents.accounts
+
+          Button {
+            required property var modelData
+            objectName: "accountButton:" + modelData.email
+            width: accountButtons.cellWidth
+            text: agents.shortName(modelData.email) + (modelData.signInExpired ? " ⟳" : "")
+            tooltipText: agents.accountTooltip(modelData)
+            selected: modelData.active
+            bordered: true
+            foreground: agents.foreground
+            fontFamily: agents.fontFamily
+            fontSize: Style.font.bodySmall
+            verticalPadding: Style.spacing.controlPaddingY
+            onHovered: function(isHovered) {
+              if (isHovered && !modelData.active && !modelData.signInExpired)
+                agents.loadQuota(modelData.email)
+              else if (!isHovered && agents.hoveredEmail === modelData.email)
+                agents.hoveredEmail = ""
+            }
+            onClicked: agents.useAccount(modelData)
+          }
+        }
 
         Button {
-          required property var modelData
-          objectName: "accountButton:" + modelData.email
           width: accountButtons.cellWidth
-          text: agents.shortName(modelData.email) + (modelData.signInExpired ? " ⟳" : "")
-          tooltipText: agents.accountTooltip(modelData)
-          selected: modelData.active
+          text: "+ Add"
+          tooltipText: "Sign in another Claude account"
           bordered: true
           foreground: agents.foreground
           fontFamily: agents.fontFamily
           fontSize: Style.font.bodySmall
           verticalPadding: Style.spacing.controlPaddingY
-          onHovered: function(isHovered) {
-            if (isHovered && !modelData.active && !modelData.signInExpired)
-              agents.loadQuota(modelData.email)
-            else if (!isHovered && agents.hoveredEmail === modelData.email)
-              agents.hoveredEmail = ""
-          }
-          onClicked: agents.useAccount(modelData)
+          onClicked: agents.addAccount()
         }
       }
 
-      Button {
-        width: accountButtons.cellWidth
-        text: "+ Add"
-        tooltipText: "Sign in another Claude account"
-        bordered: true
-        foreground: agents.foreground
-        fontFamily: agents.fontFamily
-        fontSize: Style.font.bodySmall
-        verticalPadding: Style.spacing.controlPaddingY
-        onClicked: agents.addAccount()
+      Text {
+        objectName: "generalAllowanceText"
+        width: parent.width
+        textFormat: Text.PlainText
+        text: agents.activeQuotaLine("Weekly", "General weekly")
+        color: agents.foreground
+        font.family: agents.fontFamily
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.WordWrap
       }
-    }
 
-    Text {
-      objectName: "generalAllowanceText"
-      width: parent.width
-      textFormat: Text.PlainText
-      text: agents.activeQuotaLine("Weekly", "General weekly")
-      color: agents.foreground
-      font.family: agents.fontFamily
-      font.pixelSize: Style.font.caption
-      wrapMode: Text.WordWrap
-    }
+      Text {
+        objectName: "fableAllowanceText"
+        width: parent.width
+        textFormat: Text.PlainText
+        text: agents.activeQuotaLine("Fable Weekly", "Fable weekly")
+        color: agents.foreground
+        font.family: agents.fontFamily
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.WordWrap
+      }
 
-    Text {
-      objectName: "fableAllowanceText"
-      width: parent.width
-      textFormat: Text.PlainText
-      text: agents.activeQuotaLine("Fable Weekly", "Fable weekly")
-      color: agents.foreground
-      font.family: agents.fontFamily
-      font.pixelSize: Style.font.caption
-      wrapMode: Text.WordWrap
-    }
+      Item {
+        id: fableMeter
+        objectName: "fableMeter"
+        width: parent.width
+        height: Math.max(Style.space(4), Math.round(Style.spacing.controlHeight * 0.14))
+        readonly property var section: agents.claudeSection()
+        readonly property var limits: section && section.provider && section.provider.limits ? section.provider.limits : []
+        readonly property var limit: agents.quotaLimit(limits, "Fable Weekly")
+        readonly property real resetMs: limit ? new Date(String(limit.resetsAt || "")).getTime() : NaN
+        readonly property real used: limit ? Number(limit.percent) : NaN
+        readonly property bool available: isFinite(resetMs) && resetMs > (agents.inner ? agents.inner.nowMs : Date.now())
+          && isFinite(used) && used >= 0 && used <= 1
+        readonly property color fillColor: !Qt.colorEqual(Commons.Color.accent, agents.foreground)
+          ? Commons.Color.accent : (!Qt.colorEqual(agents.urgent, agents.foreground) ? agents.urgent : "#a78bfa")
 
-    Text {
-      visible: agents.accountError !== ""
-      width: parent.width
-      textFormat: Text.PlainText
-      text: agents.accountError
-      color: agents.urgent
-      font.family: agents.fontFamily
-      font.pixelSize: Style.font.caption
-      wrapMode: Text.WordWrap
+        Rectangle {
+          anchors.fill: parent
+          radius: height / 2
+          color: agents.inner ? agents.inner.track : Style.selectedFillFor(agents.foreground, Commons.Color.accent)
+        }
+
+        Rectangle {
+          objectName: "fableMeterFill"
+          anchors.left: parent.left
+          anchors.verticalCenter: parent.verticalCenter
+          height: parent.height
+          radius: height / 2
+          width: parent.width * (fableMeter.available ? fableMeter.used : 0)
+          color: fableMeter.fillColor
+        }
+      }
+
+      Text {
+        visible: agents.accountError !== ""
+        width: parent.width
+        textFormat: Text.PlainText
+        text: agents.accountError
+        color: agents.urgent
+        font.family: agents.fontFamily
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.WordWrap
+      }
     }
   }
 }

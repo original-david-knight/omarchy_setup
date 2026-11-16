@@ -13,6 +13,8 @@ Open the Agents panel (the robot icon) and use the **Account** row under
 - The row shows the active account's general weekly and Fable weekly
   allowances as percentages remaining, with their reset times. It uses the
   stock Claude limit feed, so these values update with the bar.
+- Fable has its own bar in a different color. Both quota bars fill as usage
+  increases; the text states the remaining allowance.
 - Hover over another account to check its general and Fable allowances. The
   tooltip shows when each window resets. A failed check says why and marks
   any still-valid cached values as stale. A window past its reset time no
@@ -86,8 +88,8 @@ starts a quota request; the active account uses the stock limit feed.
 installed stock `Panel.qml` by URL, as the shell does, and changes nothing in
 it; the same technique as `david.bar`. The panel lists every agent on one page,
 one section each. Whenever the stock panel builds Claude's section, the wrapper
-appends the Account row to it and re-appends the stock rows after the section's
-name, so the row sits between the name and the limits. If a future Omarchy
+creates the Account row inside that popup window and places it between the
+section name and the stock limits. If a future Omarchy
 release reshapes the panel, the row is skipped with a warning in the shell log
 and the stock panel keeps working.
 

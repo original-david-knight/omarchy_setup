@@ -49,6 +49,14 @@ class AgentsAccountsTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("quickshell") and SHELL.is_dir() and STOCK.is_file(),
                          "requires installed Omarchy Shell")
     def test_account_row_joins_stock_panel_and_switches(self):
+        self.run_panel(separate_popup=False)
+
+    @unittest.skipUnless(shutil.which("quickshell") and SHELL.is_dir() and STOCK.is_file(),
+                         "requires installed Omarchy Shell")
+    def test_account_row_in_separate_popup_window(self):
+        self.run_panel(separate_popup=True)
+
+    def run_panel(self, separate_popup):
         with tempfile.TemporaryDirectory(prefix="agents-panel-") as folder:
             workspace = Path(folder)
             (workspace / "Commons").symlink_to(SHELL / "Commons", target_is_directory=True)
@@ -57,7 +65,17 @@ class AgentsAccountsTests(unittest.TestCase):
             for source in (SHELL / "Ui").iterdir():
                 if source.name != "KeyboardPanel.qml" and source.is_file():
                     (ui / source.name).symlink_to(source)
-            (ui / "KeyboardPanel.qml").write_text(WINDOW_HOST)
+            host = WINDOW_HOST
+            if separate_popup:
+                host = host.replace("Item {\n", "Item {\n  id: host\n", 1).replace(
+                    "  Item { id: holder; anchors.fill: parent }\n"
+                    "  Loader { id: loader; anchors.fill: parent; active: contentRequested; sourceComponent: content }",
+                    "  Window {\n"
+                    "    visible: host.open; width: host.contentWidth; height: host.contentHeight\n"
+                    "    Item { id: holder; anchors.fill: parent }\n"
+                    "    Loader { id: loader; anchors.fill: parent; active: host.contentRequested; sourceComponent: host.content }\n"
+                    "  }")
+            (ui / "KeyboardPanel.qml").write_text(host)
             (workspace / "Agents").mkdir()
             shutil.copy2(PANEL, workspace / "Agents/Panel.qml")
             shutil.copy2(Path(__file__).with_name("agents-panel.qml"), workspace / "shell.qml")
@@ -96,7 +114,8 @@ class AgentsAccountsTests(unittest.TestCase):
                 "XDG_CACHE_HOME": str(workspace / "cache"),
                 "XDG_STATE_HOME": str(workspace / "state"),
                 "AGENTS_TEST_ACTIVE": str(active), "AGENTS_TEST_LOG": str(log),
-                "AGENTS_TEST_RESET": reset}
+                "AGENTS_TEST_RESET": reset,
+                "AGENTS_TEST_SEPARATE_POPUP": "1" if separate_popup else "0"}
             if os.environ.get("AGENTS_TEST_SCREENSHOT"):
                 env["AGENTS_TEST_SCREENSHOT"] = os.environ["AGENTS_TEST_SCREENSHOT"]
             env.pop("DISPLAY", None)
