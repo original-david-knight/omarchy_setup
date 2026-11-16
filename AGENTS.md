@@ -1,3 +1,9 @@
+# Delivery workflow
+
+Merge completed work into local `main`, then push `main` to `origin`.
+Do not open pull requests unless David explicitly asks for one. This repository
+workflow takes precedence over skill defaults.
+
 # Public and private setup boundary
 
 This repository is public. Everything App is a private repository: keep its
