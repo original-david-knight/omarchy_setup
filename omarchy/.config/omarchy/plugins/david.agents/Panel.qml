@@ -56,13 +56,20 @@ Item {
   property var accounts: []
   property string accountError: ""
   property bool switching: false
+  property var quotaSnapshots: ({})
+  property string quotaRequestEmail: ""
+  property string hoveredEmail: ""
   readonly property color foreground: inner ? inner.foreground : Commons.Color.foreground
   readonly property color urgent: inner ? inner.urgent : Commons.Color.urgent
   readonly property string fontFamily: inner ? inner.fontFamily : Style.font.family
 
-  onOpenedChanged: if (opened) {
-    Qt.callLater(placeAccountRow)
-    listAccounts()
+  onOpenedChanged: {
+    if (opened) {
+      Qt.callLater(placeAccountRow)
+      listAccounts()
+    } else {
+      hoveredEmail = ""
+    }
   }
 
   Connections {
@@ -119,6 +126,62 @@ Item {
 
   function shortName(email) {
     return String(email || "").split("@")[0]
+  }
+
+  function loadQuota(email) {
+    if (!opened || !email) return
+    hoveredEmail = email
+    if (quotaRequestEmail !== "") return
+    quotaRequestEmail = email
+    quotaProcess.command = [cli, "usage", email, "--json"]
+    quotaProcess.running = true
+  }
+
+  function quotaLimit(limits, title) {
+    for (var i = 0; i < limits.length; i++) {
+      var limit = limits[i]
+      if (limit.title === title || limit.label === title
+          || (title === "Weekly" && String(limit.label || "").indexOf("Weekly (") === 0)) return limit
+    }
+    return null
+  }
+
+  function quotaLine(limits, title, label) {
+    var limit = quotaLimit(limits, title)
+    if (!limit) return label + ": unavailable"
+    var reset = new Date(String(limit.resetsAt || ""))
+    if (!isFinite(reset.getTime()) || reset.getTime() <= (inner ? inner.nowMs : Date.now()))
+      return label + ": checking after reset"
+    var percent = Number(limit.percent)
+    if (!isFinite(percent) || percent < 0 || percent > 1)
+      return label + ": unavailable"
+    return label + ": " + Math.round((1 - percent) * 100) + "% left · resets "
+      + Qt.formatDateTime(reset, "MMM d, h:mm AP")
+  }
+
+  function activeQuotaLine(title, label) {
+    var section = claudeSection()
+    var provider = section ? section.provider : null
+    var limits = provider && provider.limits ? provider.limits : []
+    return quotaLine(limits, title, label) + (provider && provider.limitsStale ? " · stale" : "")
+  }
+
+  function accountTooltip(account) {
+    var heading = account.email + (account.plan ? " · " + account.plan : "")
+    if (account.signInExpired) return heading + "\nSign-in expired. Use + Add to sign in again."
+    if (account.active) return heading + "\nCurrent account"
+    var snapshot = quotaSnapshots[account.email]
+    if (!snapshot) return heading + "\nChecking allowance…"
+    var lines = snapshot.limits || []
+    var details = quotaLine(lines, "Weekly", "General weekly") + "\n"
+      + quotaLine(lines, "Fable Weekly", "Fable weekly")
+    if (snapshot.stale) {
+      var age = snapshot.fetchedAt > 0 ? Math.max(0, Math.floor(
+        ((inner ? inner.nowMs : Date.now()) - snapshot.fetchedAt) / 60000)) : -1
+      details += "\nStale" + (age >= 0 ? " · checked " + age + "m ago" : "")
+        + " · " + snapshot.status
+    }
+    return heading + "\n" + details
   }
 
   // ------------------------------------------------------------- placement
@@ -183,6 +246,37 @@ Item {
     }
   }
 
+  Process {
+    id: quotaProcess
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var requested = agents.quotaRequestEmail
+        try {
+          var snapshot = JSON.parse(text)
+          if (snapshot.email !== requested) throw new Error("wrong account")
+          var next = Object.assign({}, agents.quotaSnapshots)
+          next[snapshot.email] = snapshot
+          agents.quotaSnapshots = next
+        } catch (e) {
+          var failed = Object.assign({}, agents.quotaSnapshots)
+          failed[requested] = { limits: [], stale: true, status: "Allowance check failed." }
+          agents.quotaSnapshots = failed
+        }
+        agents.quotaRequestEmail = ""
+        if (agents.hoveredEmail !== "" && agents.hoveredEmail !== requested)
+          Qt.callLater(function() { agents.loadQuota(agents.hoveredEmail) })
+      }
+    }
+  }
+
+  Timer {
+    interval: 60000
+    repeat: true
+    running: agents.opened && agents.hoveredEmail !== ""
+    onTriggered: agents.loadQuota(agents.hoveredEmail)
+  }
+
   Column {
     id: accountRow
     objectName: "accountRow"
@@ -208,16 +302,22 @@ Item {
 
         Button {
           required property var modelData
+          objectName: "accountButton:" + modelData.email
           width: accountButtons.cellWidth
           text: agents.shortName(modelData.email) + (modelData.signInExpired ? " ⟳" : "")
-          tooltipText: modelData.email + (modelData.plan ? " · " + modelData.plan : "")
-            + (modelData.signInExpired ? " · sign-in expired, click to sign in again" : "")
+          tooltipText: agents.accountTooltip(modelData)
           selected: modelData.active
           bordered: true
           foreground: agents.foreground
           fontFamily: agents.fontFamily
           fontSize: Style.font.bodySmall
           verticalPadding: Style.spacing.controlPaddingY
+          onHovered: function(isHovered) {
+            if (isHovered && !modelData.active && !modelData.signInExpired)
+              agents.loadQuota(modelData.email)
+            else if (!isHovered && agents.hoveredEmail === modelData.email)
+              agents.hoveredEmail = ""
+          }
           onClicked: agents.useAccount(modelData)
         }
       }
@@ -236,8 +336,31 @@ Item {
     }
 
     Text {
+      objectName: "generalAllowanceText"
+      width: parent.width
+      textFormat: Text.PlainText
+      text: agents.activeQuotaLine("Weekly", "General weekly")
+      color: agents.foreground
+      font.family: agents.fontFamily
+      font.pixelSize: Style.font.caption
+      wrapMode: Text.WordWrap
+    }
+
+    Text {
+      objectName: "fableAllowanceText"
+      width: parent.width
+      textFormat: Text.PlainText
+      text: agents.activeQuotaLine("Fable Weekly", "Fable weekly")
+      color: agents.foreground
+      font.family: agents.fontFamily
+      font.pixelSize: Style.font.caption
+      wrapMode: Text.WordWrap
+    }
+
+    Text {
       visible: agents.accountError !== ""
       width: parent.width
+      textFormat: Text.PlainText
       text: agents.accountError
       color: agents.urgent
       font.family: agents.fontFamily

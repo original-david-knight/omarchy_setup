@@ -7,6 +7,7 @@ ShellRoot {
   property int step: 0
   property int ticks: 0
   property var staleSection: null
+  property bool screenshotDone: false
 
   function check(condition, message) { if (!condition) throw new Error(message) }
   function named(item, name) {
@@ -49,21 +50,49 @@ ShellRoot {
           test.check(at < siblings.length - 1, "Claude's limits did not stay below the account row")
           row.parent.forceLayout()
           test.check(row.y > siblings[at - 1].y, "Account row sits above Claude's name row")
-          panel.useAccount(panel.accounts[1])
+          test.check(test.named(panel, "generalAllowanceText").text.indexOf("47% left") >= 0,
+                     "Active general allowance is not visible")
+          test.check(test.named(panel, "fableAllowanceText").text.indexOf("4% left") >= 0,
+                     "Active Fable allowance is not visible")
+          test.named(panel, "accountButton:b@example.com").hovered(true)
           test.step = 2
         } else if (test.step === 2) {
+          var button = test.named(panel, "accountButton:b@example.com")
+          if (!panel.quotaSnapshots["b@example.com"]) return
+          test.check(button.tooltipText.indexOf("General weekly: 80% left") >= 0,
+                     "Other account's general quota is missing on hover")
+          test.check(button.tooltipText.indexOf("Fable weekly: 40% left") >= 0,
+                     "Other account's Fable quota is missing on hover")
+          test.check(panel.accounts[0].active && !panel.accounts[1].active,
+                     "Hover changed the active account")
+          var screenshot = Quickshell.env("AGENTS_TEST_SCREENSHOT") || ""
+          if (screenshot !== "") {
+            window.contentItem.grabToImage(function(result) {
+              test.screenshotDone = result.saveToFile(screenshot)
+            })
+            test.step = 3
+          } else {
+            test.step = 4
+          }
+        } else if (test.step === 3) {
+          if (!test.screenshotDone) return
+          test.step = 4
+        } else if (test.step === 4) {
+          panel.useAccount(panel.accounts[1])
+          test.step = 5
+        } else if (test.step === 5) {
           if (panel.switching || !panel.accounts[1].active) return
           test.check(!panel.accounts[0].active, "Old account still marked active")
           test.staleSection = test.named(panel, "accountRow").parent
           // The stock panel drops every agent section while adding one and
           // builds them anew afterwards.
           panel.inner.addStage = "pick"
-          test.step = 3
-        } else if (test.step === 3) {
+          test.step = 6
+        } else if (test.step === 6) {
           if (test.named(panel, "accountRow") && test.named(panel, "accountRow").visible) return
           panel.inner.addStage = ""
-          test.step = 4
-        } else if (test.step === 4) {
+          test.step = 7
+        } else if (test.step === 7) {
           var again = test.named(panel, "accountRow")
           if (!again || !again.visible) return
           test.check(again.parent !== test.staleSection && again.parent.provider.providerId === "claude",

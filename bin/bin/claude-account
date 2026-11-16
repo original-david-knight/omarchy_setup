@@ -10,6 +10,7 @@ Settings, transcripts, MCP sign-ins and everything else in ~/.claude stay
 shared.
 
   claude-account list [--json]   saved accounts; the live one is marked
+  claude-account usage <account> --json  that account's quota snapshot
   claude-account use <account>   switch (an email, or a unique prefix of one)
   claude-account add             save the current login, then sign in another
   claude-account save            save the current login
@@ -21,9 +22,11 @@ account last chosen, so a late write can not overwrite another account's slot.
 See docs/claude-accounts.md.
 """
 import contextlib
+import datetime
 import fcntl
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import subprocess
@@ -34,7 +37,13 @@ import urllib.error
 import urllib.request
 
 PROFILE_ENDPOINT = "https://api.anthropic.com/api/oauth/profile"
+USAGE_ENDPOINT = "https://api.anthropic.com/api/oauth/usage"
+TOKEN_ENDPOINT = "https://platform.claude.com/v1/oauth/token"
+CLAUDE_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 IDENTITY_CACHE_SECONDS = 300
+USAGE_CACHE_SECONDS = 300
+USAGE_RETRY_SECONDS = 60
+MAX_RESPONSE_BYTES = 1024 * 1024
 HOME = Path.home()
 
 
@@ -56,6 +65,13 @@ def profile_path():
 
 def state_dir():
     root = Path(os.environ.get("XDG_STATE_HOME") or HOME / ".local/state") / "claude-accounts"
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(root, 0o700)
+    return root
+
+
+def quota_cache_dir():
+    root = Path(os.environ.get("XDG_CACHE_HOME") or HOME / ".cache") / "claude-accounts"
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(root, 0o700)
     return root
@@ -119,18 +135,257 @@ def token_key(oauth):
 
 
 def ask_profile_endpoint(access_token):
-    request = urllib.request.Request(PROFILE_ENDPOINT, headers={
-        "Authorization": "Bearer " + access_token,
-        "anthropic-beta": "oauth-2025-04-20",
-        "Accept": "application/json",
-    })
     try:
-        with urllib.request.urlopen(request, timeout=10) as response:
-            payload = json.loads(response.read().decode("utf-8", errors="replace"))
+        payload = oauth_json(PROFILE_ENDPOINT, token=access_token)
     except (urllib.error.URLError, OSError, ValueError):
         return ""
     account = payload.get("account") if isinstance(payload, dict) else None
     return str((account or {}).get("email") or "").lower()
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        return None
+
+
+def oauth_json(url, token=None, body=None):
+    headers = {"Accept": "application/json", "User-Agent": "claude-account/1.0"}
+    if token is not None:
+        headers.update({"Authorization": "Bearer " + token, "anthropic-beta": "oauth-2025-04-20"})
+    if body is not None:
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(url, data=json.dumps(body).encode() if body is not None else None,
+                                     headers=headers)
+    with urllib.request.build_opener(NoRedirect).open(request, timeout=10) as response:
+        raw = response.read(MAX_RESPONSE_BYTES + 1)
+        if len(raw) > MAX_RESPONSE_BYTES:
+            raise ValueError("oversized response")
+    return json.loads(raw)
+
+
+def reset_time(value):
+    if not isinstance(value, str) or len(value) > 64:
+        return None
+    try:
+        instant = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return instant if instant.tzinfo else None
+    except ValueError:
+        return None
+
+
+def quota_limit(label, title, percent, reset):
+    if isinstance(percent, bool) or not isinstance(percent, (int, float)) or not math.isfinite(percent):
+        return None
+    if percent < 0 or reset_time(reset) is None:
+        return None
+    return {"label": label, "title": title, "percent": min(1.0, percent / 100),
+            "resetsAt": reset}
+
+
+def parse_usage(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("invalid usage response")
+    limits = []
+    for key, label, title in (("five_hour", "Session (5-hour)", "Session"),
+                              ("seven_day", "Weekly (7-day)", "Weekly")):
+        bucket = payload.get(key)
+        if bucket is None:
+            continue
+        if not isinstance(bucket, dict):
+            raise ValueError("invalid usage bucket")
+        limit = quota_limit(label, title, bucket.get("utilization"), bucket.get("resets_at"))
+        if limit is None:
+            raise ValueError("invalid usage bucket")
+        limits.append(limit)
+    entries = payload.get("limits", [])
+    if not isinstance(entries, list) or len(entries) > 24:
+        raise ValueError("invalid usage limits")
+    seen = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ValueError("invalid usage limit")
+        scope = entry.get("scope")
+        model = scope.get("model") if isinstance(scope, dict) else None
+        if not isinstance(model, dict):
+            continue
+        name = model.get("display_name") or model.get("id")
+        kind = entry.get("kind")
+        if not isinstance(name, str) or not isinstance(kind, str) or not 0 < len(name) <= 60:
+            raise ValueError("invalid model limit")
+        name = "".join(c for c in name if c.isprintable()).strip()
+        if not name or (name, kind) in seen:
+            continue
+        seen.add((name, kind))
+        window = "Weekly" if "week" in kind or "day" in kind else "Session" if "hour" in kind else ""
+        if not window:
+            continue
+        title = f"{name} {window}"
+        limit = quota_limit(title, title, entry.get("percent"), entry.get("resets_at"))
+        if limit is None:
+            raise ValueError("invalid model limit")
+        limits.append(limit)
+    if not limits:
+        raise ValueError("no usage limits")
+    return limits
+
+
+def valid_limits(limits, now_ms):
+    if not isinstance(limits, list) or len(limits) > 26:
+        return []
+    return [limit for limit in limits if isinstance(limit, dict)
+            and isinstance(limit.get("label"), str) and len(limit["label"]) <= 80
+            and isinstance(limit.get("title"), str) and len(limit["title"]) <= 80
+            and isinstance(limit.get("percent"), (int, float))
+            and not isinstance(limit["percent"], bool) and 0 <= limit["percent"] <= 1
+            and (reset_time(limit.get("resetsAt")) or datetime.datetime.min.replace(
+                tzinfo=datetime.timezone.utc)).timestamp() * 1000 > now_ms]
+
+
+def quota_cache_path(email):
+    return quota_cache_dir() / (hashlib.sha256(email.encode()).hexdigest() + ".json")
+
+
+def quota_snapshot(email, cache, now_ms, status, retry_at=0):
+    limits = valid_limits(cache.get("limits"), now_ms) if isinstance(cache, dict) else []
+    fetched_at = cache.get("fetchedAt", 0) if isinstance(cache, dict) else 0
+    if not isinstance(fetched_at, (int, float)) or not 0 <= fetched_at <= now_ms:
+        fetched_at = 0
+        limits = []
+    return {"email": email, "limits": limits, "stale": status != "ok",
+            "fetchedAt": fetched_at, "status": status, "retryAt": retry_at}
+
+
+def renew_slot(account, now_ms):
+    oauth = account["claudeAiOauth"]
+    refresh = oauth.get("refreshToken")
+    if not isinstance(refresh, str) or not refresh or int(oauth.get("refreshTokenExpiresAt") or 0) <= now_ms:
+        raise ValueError("Sign-in expired. Use + Add to sign in again.")
+    body = {"grant_type": "refresh_token", "refresh_token": refresh,
+            "client_id": oauth.get("clientId") or CLAUDE_CLIENT_ID}
+    scopes = oauth.get("scopes")
+    if isinstance(scopes, list) and all(isinstance(scope, str) for scope in scopes):
+        body["scope"] = " ".join(scopes)
+    elif isinstance(scopes, str):
+        body["scope"] = scopes
+    payload = oauth_json(TOKEN_ENDPOINT, body=body)
+    if not isinstance(payload, dict):
+        raise ValueError("Token renewal returned an invalid answer.")
+    access = payload.get("access_token")
+    rotated = payload.get("refresh_token") or refresh
+    lifetime = payload.get("expires_in")
+    if (not isinstance(access, str) or not 0 < len(access) <= 16384 or
+            not isinstance(rotated, str) or not 0 < len(rotated) <= 16384 or
+            isinstance(lifetime, bool) or not isinstance(lifetime, (int, float)) or
+            not 0 < lifetime <= 86400):
+        raise ValueError("Token renewal returned an invalid answer.")
+    response_account = payload.get("account")
+    remote = response_account.get("email_address") if isinstance(response_account, dict) else None
+    if remote is None:
+        identity = oauth_json(PROFILE_ENDPOINT, token=access)
+        remote_account = identity.get("account") if isinstance(identity, dict) else None
+        remote = remote_account.get("email") if isinstance(remote_account, dict) else None
+    if not isinstance(remote, str) or remote.lower() != account["email"]:
+        raise ValueError("Renewed token belongs to a different or unknown account.")
+    renewed = dict(oauth, accessToken=access, refreshToken=rotated,
+                   expiresAt=now_ms + int(lifetime * 1000))
+    refresh_lifetime = payload.get("refresh_token_expires_in")
+    if isinstance(refresh_lifetime, (int, float)) and not isinstance(refresh_lifetime, bool) and 0 < refresh_lifetime <= 90 * 86400:
+        renewed["refreshTokenExpiresAt"] = now_ms + int(refresh_lifetime * 1000)
+    response_scopes = payload.get("scope") or payload.get("scopes")
+    if isinstance(response_scopes, str):
+        renewed["scopes"] = response_scopes.split()
+    elif isinstance(response_scopes, list) and all(isinstance(scope, str) for scope in response_scopes):
+        renewed["scopes"] = response_scopes
+    updated = dict(account, claudeAiOauth=renewed)
+    write_json(slot_path(account["email"]), updated)
+    return updated["claudeAiOauth"]
+
+
+def cmd_usage(query, as_json):
+    if not as_json:
+        sys.exit("claude-account: usage requires --json.")
+    with locked():
+        account = find_account(query)
+        email = account["email"]
+        now_ms = int(time.time() * 1000)
+        path = quota_cache_path(email)
+        cache = read_json(path, {}) or {}
+        fetched = cache.get("fetchedAt", 0) if isinstance(cache, dict) else 0
+        retry = cache.get("retryAt", 0) if isinstance(cache, dict) else 0
+        if (isinstance(fetched, (int, float)) and 0 <= now_ms - fetched < USAGE_CACHE_SECONDS * 1000
+                and cache.get("status") == "ok"):
+            snapshot = quota_snapshot(email, cache, now_ms, "ok")
+            if snapshot["limits"] and len(snapshot["limits"]) == len(cache.get("limits", [])):
+                print(json.dumps(snapshot))
+                return
+        if isinstance(retry, (int, float)) and now_ms < retry:
+            print(json.dumps(quota_snapshot(email, cache, now_ms, cache.get("status", "Unavailable"), retry)))
+            return
+        status = "Unavailable. Retry in a minute."
+        retry_after = USAGE_RETRY_SECONDS
+        try:
+            oauth = account["claudeAiOauth"]
+            live = live_login()
+            live_email = identify(live, network=False) if live else ""
+            if live and not live_email:
+                live_email = identify(live)
+            if live and not live_email:
+                raise ValueError("Current account identity is unknown. Open Claude Code and try again.")
+            active = live_email == email
+            if active:
+                oauth = live
+            renewed = False
+            if int(oauth.get("expiresAt") or 0) <= now_ms:
+                if active:
+                    raise ValueError("Active sign-in needs Claude Code to renew it.")
+                oauth = renew_slot(account, now_ms)
+                renewed = True
+            try:
+                usage = oauth_json(USAGE_ENDPOINT, token=oauth["accessToken"])
+            except urllib.error.HTTPError as error:
+                if error.code != 401 or active or renewed:
+                    raise
+                error.close()
+                oauth = renew_slot(account, now_ms)
+                usage = oauth_json(USAGE_ENDPOINT, token=oauth["accessToken"])
+            limits = parse_usage(usage)
+            snapshot = quota_snapshot(email, {"limits": limits, "fetchedAt": now_ms}, now_ms, "ok")
+            write_json(path, snapshot)
+            print(json.dumps(snapshot))
+            return
+        except urllib.error.HTTPError as error:
+            if error.geturl() == TOKEN_ENDPOINT:
+                if error.code in (400, 401):
+                    status = "Token renewal was refused. Use + Add to sign in again."
+                elif error.code == 403:
+                    status = "Anthropic blocked token renewal. Retry later."
+            elif error.geturl() == PROFILE_ENDPOINT:
+                status = "Could not verify the renewed account identity."
+            elif error.code in (401, 403):
+                status = "Usage sign-in refused. Use + Add to sign in again."
+            if error.code == 429:
+                status = ("Anthropic is rate limiting token renewal." if error.geturl() == TOKEN_ENDPOINT
+                          else "Anthropic is rate limiting usage checks.")
+                value = error.headers.get("Retry-After", "") if error.headers else ""
+                if value.isdecimal():
+                    retry_after = min(600, max(60, int(value)))
+            error.close()
+        except ValueError as error:
+            message = str(error)
+            if message in ("Sign-in expired. Use + Add to sign in again.",
+                           "Token renewal returned an invalid answer.",
+                           "Renewed token belongs to a different or unknown account.",
+                           "Active sign-in needs Claude Code to renew it.",
+                           "Current account identity is unknown. Open Claude Code and try again."):
+                status = message
+            else:
+                status = "Anthropic returned invalid usage data."
+        except (urllib.error.URLError, OSError):
+            pass
+        retry_at = now_ms + retry_after * 1000
+        snapshot = quota_snapshot(email, cache, now_ms, status, retry_at)
+        write_json(path, snapshot)
+        print(json.dumps(snapshot))
 
 
 def identify(oauth, network=True):
@@ -292,6 +547,8 @@ def main(argv):
         cmd_list("--json" in argv[1:])
     elif command == "use" and len(argv) == 2:
         cmd_use(argv[1])
+    elif command == "usage" and len(argv) == 3 and argv[2] == "--json":
+        cmd_usage(argv[1], True)
     elif command == "add":
         cmd_add()
     elif command == "save":

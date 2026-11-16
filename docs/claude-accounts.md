@@ -1,6 +1,6 @@
 # Claude Code accounts
 
-Two Claude subscriptions, one `~/.claude`. When one account's weekly limit runs
+Multiple Claude subscriptions, one `~/.claude`. When one account's weekly limit runs
 low, switch Claude Code to the other from the bar's Agents panel. Settings,
 transcripts, skills, plugins, and MCP sign-ins stay shared; only the
 subscription login changes.
@@ -10,6 +10,13 @@ subscription login changes.
 Open the Agents panel (the robot icon) and use the **Account** row under
 **Claude Code**:
 
+- The row shows the active account's general weekly and Fable weekly
+  allowances as percentages remaining, with their reset times. It uses the
+  stock Claude limit feed, so these values update with the bar.
+- Hover over another account to check its general and Fable allowances. The
+  tooltip shows when each window resets. A failed check says why and marks
+  any still-valid cached values as stale. A window past its reset time no
+  longer appears as full allowance.
 - Click an account to switch to it. The limits below (session, weekly, and
   model windows) refresh for the new account within a second.
 - Tokens by day and by model do not change: they are counted from this
@@ -30,6 +37,7 @@ From a terminal:
 
 ```bash
 claude-account list          # * marks the account in use
+claude-account usage work --json
 claude-account use work      # an email or a unique prefix of one
 claude-account add
 claude-account save
@@ -58,7 +66,19 @@ saved anywhere, so it can never overwrite another account's file. Opening the
 panel also refiles the live login, which keeps each slot's token current.
 
 A login left unused for a few weeks expires; `refreshTokenExpiresAt` in its
-file says when. Re-adding the account replaces it.
+file says when. Re-adding the account replaces it. An expired access token
+with a still-valid refresh token can renew in its saved slot when you hover
+over that account. The renewal checks the account identity and saves any
+rotated refresh token before reading usage. It does not change the active
+Claude Code login or profile.
+
+The hover check reads Anthropic's usage endpoint over HTTPS. A successful
+snapshot is reused for five minutes. A failed request waits at least one
+minute before retrying, or longer when Anthropic supplies a bounded
+`Retry-After`. Quota caches live under
+`~/.cache/claude-accounts/` with private file permissions. They contain
+allowances and timestamps, not credentials. Only hovering another account
+starts a quota request; the active account uses the stock limit feed.
 
 ## The panel
 
@@ -89,9 +109,12 @@ wrapping: Tab does not move from this panel to its bar neighbors.
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_claude_account.py' -v
+python3 -m unittest discover -s tests -p 'test_claude_usage.py' -v
 python3 -m unittest discover -s tests -p 'test_agents_accounts.py' -v
 ```
 
-The first swaps logins in a scratch home. The second runs the wrapper over the
-installed stock panel offscreen, checks the row's placement, and switches
-accounts through a stub CLI.
+The first swaps logins in a scratch home. The second tests quota fetching,
+renewal, cache separation, and errors in a scratch home. The third runs the
+wrapper over the installed stock panel offscreen, checks the visible active
+allowances and other-account hover values, then switches accounts through a
+stub CLI.

@@ -25,6 +25,16 @@ if sys.argv[1:2] == ["use"]:
         print("use " + sys.argv[2], file=log)
     state.write_text(sys.argv[2])
     sys.exit(0)
+if sys.argv[1:2] == ["usage"]:
+    with open(os.environ["AGENTS_TEST_LOG"], "a") as log:
+        print("usage " + sys.argv[2], file=log)
+    print(json.dumps({"email": sys.argv[2], "limits": [
+        {"label": "Weekly (7-day)", "title": "Weekly", "percent": .2,
+         "resetsAt": os.environ["AGENTS_TEST_RESET"]},
+        {"label": "Fable Weekly", "title": "Fable Weekly", "percent": .6,
+         "resetsAt": os.environ["AGENTS_TEST_RESET"]}],
+        "stale": False, "fetchedAt": 1, "status": "ok", "retryAt": 0}))
+    sys.exit(0)
 active = state.read_text()
 print(json.dumps({"active": active, "accounts": [
     {"email": e, "plan": "Max 20x", "active": e == active, "signInExpired": False}
@@ -62,7 +72,13 @@ class AgentsAccountsTests(unittest.TestCase):
             update.chmod(0o755)
             usage = workspace / "state/omarchy/agents/usage"
             usage.mkdir(parents=True)
-            (usage / "claude.json").write_text(json.dumps(RECORD))
+            import datetime
+            reset = (datetime.datetime.now(datetime.timezone.utc)
+                     + datetime.timedelta(days=1)).isoformat()
+            claude_record = dict(RECORD, limits=[
+                {"label": "Weekly (7-day)", "percent": .53, "resetsAt": reset},
+                {"label": "Fable Weekly", "title": "Fable Weekly", "percent": .96, "resetsAt": reset}])
+            (usage / "claude.json").write_text(json.dumps(claude_record))
             (usage / "codex.json").write_text(json.dumps(dict(RECORD, id="codex", name="Codex")))
             active = workspace / "active"
             active.write_text("a@example.com")
@@ -79,7 +95,10 @@ class AgentsAccountsTests(unittest.TestCase):
                 "XDG_CONFIG_HOME": str(workspace / "config"),
                 "XDG_CACHE_HOME": str(workspace / "cache"),
                 "XDG_STATE_HOME": str(workspace / "state"),
-                "AGENTS_TEST_ACTIVE": str(active), "AGENTS_TEST_LOG": str(log)}
+                "AGENTS_TEST_ACTIVE": str(active), "AGENTS_TEST_LOG": str(log),
+                "AGENTS_TEST_RESET": reset}
+            if os.environ.get("AGENTS_TEST_SCREENSHOT"):
+                env["AGENTS_TEST_SCREENSHOT"] = os.environ["AGENTS_TEST_SCREENSHOT"]
             env.pop("DISPLAY", None)
             env.pop("WAYLAND_DISPLAY", None)
             result = subprocess.run(["quickshell", "-p", str(workspace), "--no-color"],
@@ -88,7 +107,7 @@ class AgentsAccountsTests(unittest.TestCase):
             self.assertIn("AGENTS PANEL TEST PASSED", output, output)
             self.assertNotIn("TypeError", output)
             self.assertNotIn("ReferenceError", output)
-            self.assertEqual(log.read_text(), "use b@example.com\n")
+            self.assertEqual(log.read_text(), "usage b@example.com\nuse b@example.com\n")
 
 
 if __name__ == "__main__":

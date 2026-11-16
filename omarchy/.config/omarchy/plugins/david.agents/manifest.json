@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "author": "David Knight",
   "license": "MIT",
-  "description": "The stock Omarchy Agents panel, untouched, plus a row that switches Claude Code between saved subscription accounts.",
+  "description": "The stock Omarchy Agents panel with Claude account switching and remaining allowances for saved accounts.",
   "kinds": ["bar-widget"],
   "activation": "on-demand",
   "entryPoints": {
@@ -13,7 +13,7 @@
   },
   "barWidget": {
     "displayName": "Agents",
-    "description": "Agent usage, limits, and pace, with a Claude Code account switch.",
+    "description": "Agent usage, limits, and pace, with Claude account switching and quota previews.",
     "category": "AI",
     "aliases": ["agents", "model-usage", "claude-account"],
     "allowMultiple": false,
