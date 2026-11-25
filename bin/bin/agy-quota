@@ -1,0 +1,578 @@
+#!/usr/bin/env python3
+"""Fetch Google Antigravity quota from Google's AI Code API.
+
+Omarchy's packaged omarchy-agent-usage-agy collector queries
+daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary, which no
+longer returns the Gemini quota group (only the 3P Claude/GPT group at 100%).
+Antigravity itself uses aicode.googleapis.com/v1alpha:fetchQuotaStatus, which
+returns both the Gemini weekly/5-hour windows and the Claude/GPT group.
+
+  agy-quota [--json] [--force] [--sync-usage]
+
+Reads Antigravity OAuth tokens read-only from Secret Service keyring,
+~/.gemini/antigravity-cli/antigravity-oauth-token, omp, pi, or opencode. Never
+refreshes or modifies credential stores.
+"""
+import argparse
+import base64
+import contextlib
+import datetime
+import fcntl
+import hashlib
+import json
+import math
+import os
+from pathlib import Path
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.request
+
+QUOTA_ENDPOINT = "https://aicode.googleapis.com/v1alpha:fetchQuotaStatus"
+CACHE_SECONDS = 60
+RETRY_SECONDS = 60
+MAX_RESPONSE_BYTES = 1024 * 1024
+MAX_BUCKETS = 32
+HOME = Path.home()
+
+
+def app_root():
+    return Path(os.environ.get("AGY_DIR") or (Path.home() / ".gemini" / "antigravity-cli"))
+
+
+def cache_dir():
+    root = Path(os.environ.get("XDG_CACHE_HOME") or (Path.home() / ".cache")) / "agy-quota"
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(root, 0o700)
+    return root
+
+
+def usage_record_path():
+    state = Path(os.environ.get("XDG_STATE_HOME") or (Path.home() / ".local/state"))
+    return state / "omarchy/agents/usage/agy.json"
+
+
+def read_json(path, fallback=None):
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return fallback
+
+
+def write_json(path, data, mode=0o600):
+    """Replace path atomically, keeping a symlinked target in place."""
+    target = Path(path).resolve()
+    fd, tmp = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2)
+            handle.write("\n")
+        os.chmod(tmp, mode)
+        os.replace(tmp, target)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
+
+
+@contextlib.contextmanager
+def locked():
+    with open(cache_dir() / ".lock", "w", encoding="utf-8") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        yield
+
+
+def parse_time(value):
+    if value is None or value == "" or isinstance(value, bool):
+        return None
+    try:
+        if isinstance(value, (int, float)) or (isinstance(value, str) and value.isdigit()):
+            stamp = float(value)
+            if not math.isfinite(stamp) or stamp <= 0:
+                return None
+            parsed = datetime.datetime.fromtimestamp(
+                stamp / 1000 if stamp > 1e12 else stamp, datetime.timezone.utc
+            )
+        else:
+            text = str(value)
+            if len(text) > 64:
+                return None
+            parsed = datetime.datetime.fromisoformat(text.replace("Z", "+00:00"))
+            if not parsed.tzinfo:
+                return None
+    except (ValueError, OverflowError, OSError):
+        return None
+    return None if parsed == datetime.datetime.min.replace(tzinfo=datetime.timezone.utc) else parsed
+
+
+def jwt_email(id_token):
+    if not isinstance(id_token, str) or id_token.count(".") < 2:
+        return ""
+    try:
+        part = id_token.split(".")[1]
+        padded = part + "=" * (-len(part) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(padded))
+        return str(claims.get("email") or "").strip().lower() if isinstance(claims, dict) else ""
+    except (ValueError, OSError):
+        return ""
+
+
+def agy_login():
+    data = None
+    try:
+        raw = subprocess.check_output(
+            ["secret-tool", "lookup", "service", "gemini", "username", "antigravity"],
+            text=True, stderr=subprocess.DEVNULL, timeout=3,
+        )
+        data = json.loads(raw) if raw.strip() else None
+    except Exception:
+        data = None
+    if not isinstance(data, dict):
+        data = read_json(app_root() / "antigravity-oauth-token")
+    if not isinstance(data, dict):
+        return None
+    token = data.get("token") if isinstance(data.get("token"), dict) else {}
+    expires = parse_time(token.get("expiry") or data.get("expiry"))
+    email = str(data.get("id_token_email") or "").strip().lower() or jwt_email(data.get("id_token"))
+    return {
+        "source": "agy",
+        "accessToken": str(token.get("access_token") or data.get("access_token") or ""),
+        "expiresAt": expires.timestamp() if expires else 0.0,
+        "refresh": str(token.get("refresh_token") or data.get("refresh_token") or ""),
+        "email": email,
+    }
+
+
+def harness_login(source, data):
+    if (not isinstance(data, dict) or data.get("type", "oauth") != "oauth"
+            or not isinstance(data.get("access"), str) or not data["access"]):
+        return None
+    expires = parse_time(data.get("expires"))
+    return {
+        "source": source,
+        "accessToken": data["access"],
+        "expiresAt": expires.timestamp() if expires else 0.0,
+        "refresh": str(data.get("refresh") or ""),
+        "email": str(data.get("email") or "").strip().lower(),
+    }
+
+
+def omp_logins():
+    database = Path.home() / ".omp" / "agent" / "agent.db"
+    if not database.is_file():
+        return []
+    try:
+        conn = sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)
+        try:
+            rows = conn.execute(
+                "SELECT data FROM auth_credentials WHERE provider = 'google-antigravity' "
+                "AND credential_type = 'oauth' AND disabled_cause IS NULL"
+            ).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return []
+    out = []
+    for (raw,) in rows:
+        try:
+            entry = harness_login("omp", json.loads(raw))
+        except (TypeError, ValueError):
+            continue
+        if entry:
+            out.append(entry)
+    return out
+
+
+def pi_logins():
+    root = Path(os.environ.get("PI_CODING_AGENT_DIR") or (Path.home() / ".pi" / "agent"))
+    auth = read_json(root / "auth.json")
+    entry = harness_login("pi", auth.get("google-antigravity")) if isinstance(auth, dict) else None
+    return [entry] if entry else []
+
+
+def opencode_logins():
+    config_home = Path(os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config"))
+    if not (config_home / "opencode" / "antigravity-accounts.json").is_file():
+        return []
+    data_home = Path(os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local/share"))
+    auth = read_json(data_home / "opencode" / "auth.json")
+    entry = harness_login("opencode", auth.get("google")) if isinstance(auth, dict) else None
+    return [entry] if entry else []
+
+
+def logins():
+    entry = agy_login()
+    return ([entry] if entry else []) + omp_logins() + pi_logins() + opencode_logins()
+
+
+def token_fresh(entry, now_s):
+    return bool(entry.get("accessToken")) and (not entry.get("expiresAt") or entry["expiresAt"] > now_s)
+
+
+def cache_path_for(entry):
+    identity = entry.get("email") or entry.get("refresh") or entry.get("accessToken") or "default"
+    return cache_dir() / (hashlib.sha256(identity.encode("utf-8")).hexdigest() + ".json")
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        return None
+
+
+def fetch_quota_status(access_token):
+    request = urllib.request.Request(
+        QUOTA_ENDPOINT,
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+            "User-Agent": "antigravity",
+        },
+        method="GET",
+    )
+    with urllib.request.build_opener(NoRedirect).open(request, timeout=10) as response:
+        raw = response.read(MAX_RESPONSE_BYTES + 1)
+        if len(raw) > MAX_RESPONSE_BYTES:
+            raise ValueError("oversized response")
+    return json.loads(raw)
+
+
+def sanitize_text(value, limit=60):
+    if not isinstance(value, str):
+        return ""
+    cleaned = "".join(ch for ch in value if ch.isprintable()).strip()
+    return cleaned[:limit]
+
+
+def parse_bucket(bucket):
+    if not isinstance(bucket, dict) or bucket.get("disabled") is True:
+        return None
+    reset = parse_time(bucket.get("resetTime") or bucket.get("reset_time"))
+    resets_at = reset.isoformat() if reset else ""
+    raw = bucket.get("remainingFraction", bucket.get("remaining_fraction"))
+    if raw is None:
+        if resets_at:
+            remaining = 0.0
+        else:
+            return None
+    elif isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        return None
+    else:
+        val = float(raw)
+        if not math.isfinite(val):
+            return None
+        remaining = round(max(0.0, min(1.0, val)), 4)
+    used = round(max(0.0, min(1.0, 1.0 - remaining)), 4)
+    return {
+        "bucketId": sanitize_text(bucket.get("bucketId") or bucket.get("bucket_id") or "", 40),
+        "remainingFraction": remaining,
+        "percent": used,
+        "resetsAt": resets_at,
+    }
+
+
+def bucket_kind(bucket):
+    window = str(bucket.get("refreshWindowLabel") or bucket.get("window") or "").lower()
+    bucket_id = str(bucket.get("bucketId") or bucket.get("bucket_id") or "").lower()
+    name = str(bucket.get("displayName") or bucket.get("display_name") or "").lower()
+    if window == "weekly" or "weekly" in bucket_id or "week" in name:
+        return "weekly"
+    if window == "5h" or "5h" in bucket_id or "five" in name:
+        return "session"
+    return ""
+
+
+def is_gemini_group(group):
+    name = str(group.get("displayName") or group.get("display_name") or "").lower()
+    if "gemini" in name:
+        return True
+    buckets = group.get("buckets")
+    if isinstance(buckets, list):
+        for bucket in buckets:
+            if isinstance(bucket, dict) and str(bucket.get("bucketId") or "").lower().startswith("gemini"):
+                return True
+    return False
+
+
+def parse_quota_status(payload):
+    if not isinstance(payload, dict) or "error" in payload:
+        raise ValueError("invalid quota response")
+    summary = payload.get("quotaSummary")
+    if not isinstance(summary, dict):
+        raise ValueError("missing quotaSummary")
+    raw_groups = summary.get("groups")
+    if not isinstance(raw_groups, list) or len(raw_groups) > 16:
+        raise ValueError("invalid quota groups")
+    groups = [g for g in raw_groups if isinstance(g, dict)]
+    gemini = next((g for g in groups if is_gemini_group(g)), None)
+    if gemini is None:
+        raise ValueError("missing Gemini quota group")
+    raw_buckets = gemini.get("buckets")
+    if not isinstance(raw_buckets, list) or len(raw_buckets) > MAX_BUCKETS:
+        raise ValueError("invalid Gemini quota buckets")
+
+    weekly = None
+    session = None
+    for bucket in raw_buckets:
+        parsed = parse_bucket(bucket)
+        if not parsed:
+            continue
+        kind = bucket_kind(bucket)
+        if kind == "weekly":
+            weekly = {
+                **parsed,
+                "label": "Weekly (7-day)",
+                "title": "Weekly",
+            }
+        elif kind == "session":
+            session = {
+                **parsed,
+                "label": "Session (5-hour)",
+                "title": "Session",
+            }
+
+    limits = []
+    if weekly:
+        limits.append(weekly)
+    if session:
+        limits.append(session)
+    if not limits:
+        raise ValueError("no Gemini quota limits")
+
+    # Include touched non-Gemini allowances (e.g. Claude/GPT models) so nothing is hidden.
+    for group in groups:
+        if group is gemini:
+            continue
+        group_name = sanitize_text(group.get("displayName") or group.get("display_name") or "", 40)
+        short = "Claude/GPT" if "claude" in group_name.lower() else (group_name or "3P")
+        buckets = group.get("buckets")
+        if not isinstance(buckets, list):
+            continue
+        for bucket in buckets[:MAX_BUCKETS]:
+            parsed = parse_bucket(bucket)
+            if not parsed or parsed["percent"] <= 0:
+                continue
+            kind = bucket_kind(bucket)
+            suffix = "Weekly" if kind == "weekly" else "Session"
+            title = f"{short} {suffix}"
+            limits.append({
+                **parsed,
+                "label": title,
+                "title": title,
+            })
+
+    return limits
+
+
+def valid_limits(limits, now_ms):
+    if not isinstance(limits, list) or len(limits) > MAX_BUCKETS:
+        return []
+    out = []
+    for limit in limits:
+        if not isinstance(limit, dict):
+            continue
+        label = limit.get("label")
+        title = limit.get("title")
+        percent = limit.get("percent")
+        remaining = limit.get("remainingFraction")
+        resets_at = limit.get("resetsAt")
+        if (not isinstance(label, str) or len(label) > 80
+                or not isinstance(title, str) or len(title) > 80
+                or isinstance(percent, bool) or not isinstance(percent, (int, float))
+                or not math.isfinite(percent) or not 0 <= percent <= 1
+                or isinstance(remaining, bool) or not isinstance(remaining, (int, float))
+                or not math.isfinite(remaining) or not 0 <= remaining <= 1
+                or not isinstance(resets_at, str) or len(resets_at) > 64):
+            continue
+        if resets_at:
+            parsed = parse_time(resets_at)
+            if parsed is None or parsed.timestamp() * 1000 <= now_ms:
+                continue
+        out.append({
+            "bucketId": sanitize_text(limit.get("bucketId") or "", 40),
+            "label": label,
+            "title": title,
+            "percent": round(float(percent), 4),
+            "remainingFraction": round(float(remaining), 4),
+            "resetsAt": resets_at,
+        })
+    return out
+
+
+def make_snapshot(cache, now_ms, status, retry_at=0):
+    limits = valid_limits(cache.get("limits"), now_ms) if isinstance(cache, dict) else []
+    fetched_at = cache.get("fetchedAt", 0) if isinstance(cache, dict) else 0
+    if isinstance(fetched_at, bool) or not isinstance(fetched_at, (int, float)) or not 0 <= fetched_at <= now_ms:
+        fetched_at = 0
+        limits = []
+    return {
+        "limits": limits,
+        "stale": status != "ok",
+        "fetchedAt": int(fetched_at),
+        "status": status,
+        "retryAt": int(retry_at),
+    }
+
+
+def sync_usage_record(snapshot):
+    """Keep Omarchy's agy.json limits aligned so bar alarms stay accurate."""
+    limits = snapshot.get("limits") or []
+    if not limits:
+        return
+    path = usage_record_path()
+    record = read_json(path)
+    if not isinstance(record, dict) or record.get("id") != "agy":
+        return
+    # Stock panel orders Session before Weekly, then any scoped limits.
+    order = {"Session": 0, "Weekly": 1}
+    ordered = sorted(limits, key=lambda item: order.get(item.get("title"), 2))
+    stock_limits = [
+        {
+            "label": item["label"],
+            "title": item["title"],
+            "percent": item["percent"],
+            "resetsAt": item["resetsAt"],
+        }
+        for item in ordered
+    ]
+    stale = bool(snapshot.get("stale"))
+    fetched_at = int(snapshot.get("fetchedAt") or 0)
+    if (record.get("limits") == stock_limits
+            and bool(record.get("limitsStale")) == stale
+            and int(record.get("limitsFetchedAt") or 0) == fetched_at):
+        return
+    updated = dict(record)
+    updated["limits"] = stock_limits
+    updated["limitsStale"] = stale
+    updated["limitsFetchedAt"] = fetched_at
+    if not stale:
+        updated["usageStatusText"] = ""
+        updated["authHelpText"] = ""
+    mode = path.stat().st_mode & 0o777 if path.exists() else 0o600
+    write_json(path, updated, mode=mode)
+
+
+def collect(force=False):
+    now_s = time.time()
+    now_ms = int(now_s * 1000)
+    entries = logins()
+    ordered = sorted(entries, key=lambda e: (not token_fresh(e, now_s), -float(e.get("expiresAt") or 0)))
+    fresh = [e for e in ordered if token_fresh(e, now_s)]
+    lead = next(iter(fresh or [e for e in ordered if e.get("accessToken")] or ordered), None)
+
+    if not lead or not lead.get("accessToken"):
+        return {
+            "limits": [],
+            "stale": True,
+            "fetchedAt": 0,
+            "status": "Sign in to Antigravity with `agy` to see quota.",
+            "retryAt": 0,
+        }
+
+    with locked():
+        path = cache_path_for(lead)
+        cache = read_json(path, {}) or {}
+        fetched = cache.get("fetchedAt", 0) if isinstance(cache, dict) else 0
+        retry = cache.get("retryAt", 0) if isinstance(cache, dict) else 0
+        if (not force and isinstance(fetched, (int, float))
+                and 0 <= now_ms - fetched < CACHE_SECONDS * 1000
+                and cache.get("status") == "ok"):
+            cached = make_snapshot(cache, now_ms, "ok")
+            if cached["limits"] and len(cached["limits"]) == len(cache.get("limits", [])):
+                return cached
+        if not force and isinstance(retry, (int, float)) and now_ms < retry:
+            return make_snapshot(cache, now_ms, str(cache.get("status") or "Unavailable."), retry)
+
+        if not fresh:
+            status = (
+                "Antigravity access token lapsed. Start `agy` to refresh it."
+                if lead.get("refresh")
+                else "Antigravity sign-in expired. Start `agy` to sign in again."
+            )
+            return make_snapshot(cache, now_ms, status, 0)
+
+        status = "Couldn't reach Google's quota service."
+        retry_after = RETRY_SECONDS
+        refused = False
+        for entry in fresh:
+            try:
+                payload = fetch_quota_status(entry["accessToken"])
+                limits = parse_quota_status(payload)
+            except urllib.error.HTTPError as error:
+                code = error.code
+                retry_hdr = error.headers.get("Retry-After", "") if error.headers else ""
+                error.close()
+                if code in (401, 403):
+                    refused = True
+                    continue
+                if code == 429:
+                    status = "Google is rate limiting quota checks."
+                    if retry_hdr.isdecimal():
+                        retry_after = min(600, max(60, int(retry_hdr)))
+                else:
+                    status = f"Google's quota service answered with status {code}."
+                break
+            except ValueError:
+                status = "Google returned invalid Antigravity quota data."
+                break
+            except (urllib.error.URLError, OSError):
+                status = "Couldn't reach Google's quota service."
+                break
+
+            entry_path = cache_path_for(entry)
+            snapshot = make_snapshot({"limits": limits, "fetchedAt": now_ms}, now_ms, "ok")
+            write_json(entry_path, snapshot)
+            return snapshot
+
+        if refused and status == "Couldn't reach Google's quota service.":
+            status = "Google refused the Antigravity sign-in. Start `agy` to sign in again."
+
+        retry_at = now_ms + retry_after * 1000
+        snapshot = make_snapshot(cache, now_ms, status, retry_at)
+        write_json(path, snapshot)
+        return snapshot
+
+
+def format_human(snapshot):
+    lines = []
+    now = datetime.datetime.now(datetime.timezone.utc)
+    for limit in snapshot.get("limits") or []:
+        remaining = limit["remainingFraction"] * 100
+        pct = f"{remaining:.0f}%" if remaining in (0.0, 100.0) else f"{remaining:.2f}%"
+        reset_note = "full allowance"
+        if limit.get("resetsAt"):
+            parsed = parse_time(limit["resetsAt"])
+            if parsed and parsed > now:
+                mins = int((parsed - now).total_seconds() // 60)
+                reset_note = f"refreshes in {mins // 60}h {mins % 60}m"
+            else:
+                reset_note = "refreshing"
+        lines.append(f"{limit['title']}: {pct} remaining ({reset_note})")
+    if snapshot.get("stale") and snapshot.get("status"):
+        prefix = "Stale: " if lines else ""
+        lines.append(prefix + snapshot["status"])
+    return "\n".join(lines) or "No Antigravity quota data."
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Fetch Google Antigravity quota.")
+    parser.add_argument("--json", action="store_true", help="emit JSON snapshot")
+    parser.add_argument("--force", action="store_true", help="bypass cache")
+    parser.add_argument("--sync-usage", action="store_true",
+                        help="sync limits into Omarchy's agy.json usage record")
+    args = parser.parse_args(argv)
+
+    snapshot = collect(force=args.force)
+    if args.sync_usage:
+        with contextlib.suppress(OSError, ValueError):
+            sync_usage_record(snapshot)
+    if args.json:
+        print(json.dumps(snapshot))
+    else:
+        print(format_human(snapshot))
+
+
+if __name__ == "__main__":
+    main()

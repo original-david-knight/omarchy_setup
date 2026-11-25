@@ -107,16 +107,33 @@ shell rewrites its files to `qs://` URLs and the stock panel's inline
 components then fail to resolve (`DayRow is not a type`). One side effect of
 wrapping: Tab does not move from this panel to its bar neighbors.
 
+## Antigravity quota
+
+Omarchy's packaged `omarchy-agent-usage-agy` collector queries
+`daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary`, which
+no longer returns the Gemini quota group. `bin/bin/agy-quota` queries
+`aicode.googleapis.com/v1alpha:fetchQuotaStatus` read-only using Antigravity's
+existing OAuth token, caches snapshots privately under `~/.cache/agy-quota/`
+(60-second TTL, 0600 permissions, no credentials stored), and optionally syncs
+the limits back into `~/.local/state/omarchy/agents/usage/agy.json` so the bar
+alarm stays accurate.
+
+`david.agents` injects an Antigravity quota block below Antigravity's section
+header showing weekly and 5-hour remaining percentages, progress bars, and
+refresh countdowns, while hiding the broken stock limits column.
+
 ## Tests
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_claude_account.py' -v
 python3 -m unittest discover -s tests -p 'test_claude_usage.py' -v
+python3 -m unittest discover -s tests -p 'test_agy_quota.py' -v
 python3 -m unittest discover -s tests -p 'test_agents_accounts.py' -v
 ```
 
-The first swaps logins in a scratch home. The second tests quota fetching,
-renewal, cache separation, and errors in a scratch home. The third runs the
-wrapper over the installed stock panel offscreen, checks the visible active
-allowances and other-account hover values, then switches accounts through a
-stub CLI.
+The first swaps logins in a scratch home. The second tests Claude quota fetching,
+renewal, cache separation, and errors in a scratch home. The third tests
+Antigravity quota parsing, caching, backoff, lapsed tokens, and `agy.json` sync.
+The fourth runs the wrapper over the installed stock panel offscreen, checks the
+visible Claude allowances, other-account hover values, Antigravity remaining
+bars and reset countdowns, then switches Claude accounts through a stub CLI.

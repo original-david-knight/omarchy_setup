@@ -41,6 +41,24 @@ print(json.dumps({"active": active, "accounts": [
     for e in ("a@example.com", "b@example.com")]}))
 """
 
+AGY_QUOTA = """#!/usr/bin/env python3
+import json, os
+print(json.dumps({
+    "limits": [
+        {"bucketId": "gemini-weekly", "label": "Weekly (7-day)", "title": "Weekly",
+         "percent": 0.1758, "remainingFraction": 0.8242,
+         "resetsAt": os.environ["AGENTS_TEST_AGY_WEEKLY_RESET"]},
+        {"bucketId": "gemini-5h", "label": "Session (5-hour)", "title": "Session",
+         "percent": 0.0164, "remainingFraction": 0.9836,
+         "resetsAt": os.environ["AGENTS_TEST_AGY_SESSION_RESET"]},
+    ],
+    "stale": False,
+    "fetchedAt": 1,
+    "status": "ok",
+    "retryAt": 0,
+}))
+"""
+
 RECORD = {"schemaVersion": 1, "id": "claude", "name": "Claude Code", "ready": True,
           "tierLabel": "Max 20x", "limits": [], "totalPrompts": 5, "totalSessions": 1}
 
@@ -85,18 +103,27 @@ class AgentsAccountsTests(unittest.TestCase):
             cli = home_bin / "claude-account"
             cli.write_text(ACCOUNTS)
             cli.chmod(0o755)
+            agy_cli = home_bin / "agy-quota"
+            agy_cli.write_text(AGY_QUOTA)
+            agy_cli.chmod(0o755)
             update = home_bin / "omarchy-agent-usage-update"
             update.write_text("#!/bin/sh\nexit 0\n")
             update.chmod(0o755)
             usage = workspace / "state/omarchy/agents/usage"
             usage.mkdir(parents=True)
             import datetime
-            reset = (datetime.datetime.now(datetime.timezone.utc)
-                     + datetime.timedelta(days=1)).isoformat()
+            now = datetime.datetime.now(datetime.timezone.utc)
+            reset = (now + datetime.timedelta(days=1)).isoformat()
+            agy_weekly_reset = (now + datetime.timedelta(hours=126, minutes=17)).isoformat()
+            agy_session_reset = (now + datetime.timedelta(hours=4, minutes=28)).isoformat()
             claude_record = dict(RECORD, limits=[
                 {"label": "Weekly (7-day)", "percent": .53, "resetsAt": reset},
                 {"label": "Fable Weekly", "title": "Fable Weekly", "percent": .96, "resetsAt": reset}])
+            agy_record = dict(RECORD, id="agy", name="Antigravity", tierLabel="Ultra", limits=[
+                {"label": "Session (5-hour)", "title": "Session", "percent": 0.0, "resetsAt": ""},
+                {"label": "Weekly (7-day)", "title": "Weekly", "percent": 0.0, "resetsAt": ""}])
             (usage / "claude.json").write_text(json.dumps(claude_record))
+            (usage / "agy.json").write_text(json.dumps(agy_record))
             (usage / "codex.json").write_text(json.dumps(dict(RECORD, id="codex", name="Codex")))
             active = workspace / "active"
             active.write_text("a@example.com")
@@ -115,9 +142,13 @@ class AgentsAccountsTests(unittest.TestCase):
                 "XDG_STATE_HOME": str(workspace / "state"),
                 "AGENTS_TEST_ACTIVE": str(active), "AGENTS_TEST_LOG": str(log),
                 "AGENTS_TEST_RESET": reset,
+                "AGENTS_TEST_AGY_WEEKLY_RESET": agy_weekly_reset,
+                "AGENTS_TEST_AGY_SESSION_RESET": agy_session_reset,
                 "AGENTS_TEST_SEPARATE_POPUP": "1" if separate_popup else "0"}
             if os.environ.get("AGENTS_TEST_SCREENSHOT"):
                 env["AGENTS_TEST_SCREENSHOT"] = os.environ["AGENTS_TEST_SCREENSHOT"]
+            if os.environ.get("AGENTS_TEST_AGY_SCREENSHOT"):
+                env["AGENTS_TEST_AGY_SCREENSHOT"] = os.environ["AGENTS_TEST_AGY_SCREENSHOT"]
             env.pop("DISPLAY", None)
             env.pop("WAYLAND_DISPLAY", None)
             result = subprocess.run(["quickshell", "-p", str(workspace), "--no-color"],

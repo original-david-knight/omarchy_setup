@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "author": "David Knight",
   "license": "MIT",
-  "description": "The stock Omarchy Agents panel with Claude account switching and remaining allowances for saved accounts.",
+  "description": "The stock Omarchy Agents panel with Claude account switching, remaining allowances, and live Antigravity quota.",
   "kinds": ["bar-widget"],
   "activation": "on-demand",
   "entryPoints": {
@@ -13,7 +13,7 @@
   },
   "barWidget": {
     "displayName": "Agents",
-    "description": "Agent usage, limits, and pace, with Claude account switching and quota previews.",
+    "description": "Agent usage, limits, and pace, with Claude account switching, quota previews, and live Antigravity quota.",
     "category": "AI",
     "aliases": ["agents", "model-usage", "claude-account"],
     "allowMultiple": false,
@@ -21,6 +21,7 @@
       "providers": {
         "claude": { "enabled": true },
         "codex": { "enabled": true },
+        "agy": { "enabled": true },
         "fireworks": { "enabled": true }
       },
       "refreshIntervalSec": 900,
