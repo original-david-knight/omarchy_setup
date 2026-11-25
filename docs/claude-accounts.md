@@ -10,11 +10,13 @@ subscription login changes.
 Open the Agents panel (the robot icon) and use the **Account** row under
 **Claude Code**:
 
-- The row shows the active account's general weekly and Fable weekly
-  allowances as percentages remaining, with their reset times. It uses the
-  stock Claude limit feed, so these values update with the bar.
-- Fable has its own bar in a different color. Both quota bars fill as usage
-  increases; the text states the remaining allowance.
+- The row shows the active account's allowances (general weekly, Fable weekly,
+  and session when present) using the same remaining-capacity bar style as
+  Antigravity and Codex: percentages remaining, bars draining toward empty, and
+  refresh countdowns.
+- Each provider uses a distinct bar color from the active theme: Antigravity
+  keeps the theme accent/green bar, Claude uses orange, and Codex uses magenta
+  (any limit at or below 10% remaining turns urgent red).
 - Hover over another account to check its general and Fable allowances. The
   tooltip shows when each window resets. A failed check says why and marks
   any still-valid cached values as stale. A window past its reset time no

@@ -5,19 +5,22 @@ import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 
-// david.agents: the stock Agents panel plus a Claude Code account switch and
-// live Google Antigravity quota.
+// david.agents: the stock Agents panel with unified remaining-quota bars across
+// Antigravity, Claude Code, and Codex, plus a Claude Code account switch.
 //
 // Copying the stock panel would freeze 2100 lines at one Omarchy release, so
 // this wrapper instantiates the installed Panel.qml by URL, exactly as
 // omarchy-shell would (the david.bar technique), and injects custom rows into
 // specific provider sections:
-// - Claude Code: an Account switch and per-account allowance row via
-//   ~/bin/claude-account; see docs/claude-accounts.md.
 // - Antigravity: live weekly and 5-hour remaining quota bars via
 //   ~/bin/agy-quota (aicode.googleapis.com/v1alpha:fetchQuotaStatus),
 //   replacing the stock limits column because Omarchy's packaged collector
 //   queries daily-cloudcode-pa which no longer returns Gemini buckets.
+// - Claude Code: an Account switch via ~/bin/claude-account (see
+//   docs/claude-accounts.md) plus unified remaining-quota bars in the theme's
+//   orange color, replacing the stock used-quota bars.
+// - Codex: unified remaining-quota bars in the theme's magenta color,
+//   replacing the stock used-quota bars while keeping reset-credit info.
 //
 // Extending the stock panel as a QML type instead does not work: the shell
 // rewrites its own files to qs:// URLs, and the stock panel's inline
@@ -30,9 +33,9 @@ import qs.Ui
 // Relied-on stock facts, checked at runtime and logged when missing: the
 // panel exposes `providerSections`, a Repeater with one Column per agent, and
 // a section's name row is its only child carrying `lit`. Sections are rebuilt
-// whenever the agent list changes, so the row is placed again each time. Tab from
-// this panel to its bar neighbors does not work, because the stock panel
-// asks the bar for its own slot, which belongs to this wrapper.
+// whenever the agent list changes, so custom rows are placed again each time.
+// Tab from this panel to its bar neighbors does not work, because the stock
+// panel asks the bar for its own slot, which belongs to this wrapper.
 Item {
   id: agents
 
@@ -46,6 +49,7 @@ Item {
   property var inner: null
   property Item accountRow: null
   property Item agyQuotaRow: null
+  property Item codexQuotaRow: null
 
   readonly property bool opened: !!inner && inner.opened === true
   function open() { if (inner) inner.open() }
@@ -73,6 +77,33 @@ Item {
   readonly property color dim: inner ? inner.dim : Qt.darker(foreground, 1.55)
   readonly property color urgent: inner ? inner.urgent : Commons.Color.urgent
   readonly property string fontFamily: inner ? inner.fontFamily : Style.font.family
+
+  // Provider bar colors: Antigravity keeps the accent/green bar; Claude uses
+  // the active theme's orange and Codex uses the active theme's magenta.
+  property color themeOrange: "#ff9a4d"
+  property color themeMagenta: "#e07ae8"
+  readonly property color agyBarColor: !Qt.colorEqual(Commons.Color.accent, agents.foreground)
+    ? Commons.Color.accent : "#86dc5e"
+  readonly property color claudeBarColor: themeOrange
+  readonly property color codexBarColor: themeMagenta
+
+  FileView {
+    id: themeColorsFile
+    path: (Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") || "") + "/.local/state")
+      + "/omarchy/current/theme/colors.toml"
+    watchChanges: true
+    printErrors: false
+    onLoaded: agents.parseThemeColors(text())
+    onFileChanged: reload()
+  }
+
+  function parseThemeColors(content) {
+    var src = String(content || "")
+    var orangeMatch = src.match(/^\s*orange\s*=\s*"(#[0-9a-fA-F]{6})"/m)
+    var magentaMatch = src.match(/^\s*magenta\s*=\s*"(#[0-9a-fA-F]{6})"/m)
+    themeOrange = orangeMatch ? orangeMatch[1] : "#ff9a4d"
+    themeMagenta = magentaMatch ? magentaMatch[1] : "#e07ae8"
+  }
 
   onOpenedChanged: {
     if (opened) {
@@ -121,6 +152,8 @@ Item {
     if (component.status === Component.Loading) component.statusChanged.connect(ready)
     else ready()
   }
+
+  // ------------------------------------------------------------- accounts
 
   function listAccounts() {
     if (!listProcess.running) listProcess.running = true
@@ -178,13 +211,6 @@ Item {
       return label + ": unavailable"
     return label + ": " + Math.round((1 - percent) * 100) + "% left · resets "
       + Qt.formatDateTime(reset, "MMM d, h:mm AP")
-  }
-
-  function activeQuotaLine(title, label) {
-    var section = claudeSection()
-    var provider = section ? section.provider : null
-    var limits = provider && provider.limits ? provider.limits : []
-    return quotaLine(limits, title, label) + (provider && provider.limitsStale ? " · stale" : "")
   }
 
   function accountTooltip(account) {
@@ -259,7 +285,9 @@ Item {
     }
   }
 
-  function agyRemainingFraction(limit) {
+  // ------------------------------------------------------- unified quotas
+
+  function limitRemainingFraction(limit) {
     if (!limit) return NaN
     var resetStr = String(limit.resetsAt || "")
     var now = inner ? inner.nowMs : Date.now()
@@ -272,22 +300,42 @@ Item {
     return rem
   }
 
-  function agyLimitTitle(limit) {
-    var title = String(limit && limit.title || "")
-    if (title === "Weekly") return "Weekly Limit Remaining"
-    if (title === "Session") return "Five Hour Limit Remaining"
-    return title !== "" ? title + " Remaining" : "Limit Remaining"
+  function limitKey(limit) {
+    var title = String(limit && limit.title || "").trim()
+    var label = String(limit && limit.label || "").trim()
+    if (title !== "") return title
+    var lower = label.toLowerCase()
+    if (lower.indexOf("720h") >= 0 || lower.indexOf("month") >= 0 || lower.indexOf("30-day") >= 0) return "Monthly"
+    if (lower.indexOf("week") >= 0 || lower.indexOf("7-day") >= 0) return "Weekly"
+    if (lower.indexOf("session") >= 0 || lower.indexOf("5-hour") >= 0 || lower.indexOf("5h") >= 0) return "Session"
+    return label
   }
 
-  function agyPercentText(remaining) {
+  function limitDisplayTitle(limit) {
+    var title = String(limit && limit.title || "").trim()
+    var label = String(limit && limit.label || "").trim()
+    var key = limitKey(limit)
+    if (key === "Weekly") return "Weekly Limit Remaining"
+    if (key === "Session") return "Five Hour Limit Remaining"
+    if (key === "Monthly") return "Monthly Limit Remaining"
+    if (title !== "") {
+      if (title.slice(-8) === " Session") return title.slice(0, -8) + " Five Hour Remaining"
+      return title + " Remaining"
+    }
+    var clean = label.replace(/\s+window$/i, "").trim()
+    return clean !== "" ? clean + " Remaining" : "Limit Remaining"
+  }
+
+  function limitPercentText(remaining) {
     if (!isFinite(remaining)) return "—"
     var pct = remaining * 100
     if (pct <= 0) return "0%"
     if (pct >= 100) return "100%"
+    if (Math.abs(pct - Math.round(pct)) < 0.005) return Math.round(pct) + "%"
     return pct.toFixed(2) + "%"
   }
 
-  function agyFormatHoursMinutes(ms) {
+  function formatHoursMinutes(ms) {
     if (!(ms > 0)) return "now"
     var totalMinutes = Math.floor(ms / 60000)
     var hours = Math.floor(totalMinutes / 60)
@@ -296,7 +344,7 @@ Item {
     return Math.max(1, minutes) + "m"
   }
 
-  function agyRefreshText(limit) {
+  function limitRefreshText(limit) {
     if (!limit) return ""
     var resetStr = String(limit.resetsAt || "")
     if (resetStr === "") return "Full allowance"
@@ -304,36 +352,35 @@ Item {
     var now = inner ? inner.nowMs : Date.now()
     var ms = reset.getTime() - now
     if (!isFinite(ms) || ms <= 0) return "Refreshing…"
-    return "Refreshes in " + agyFormatHoursMinutes(ms) + " · " + Qt.formatDateTime(reset, "MMM d, h:mm AP")
+    return "Refreshes in " + formatHoursMinutes(ms) + " · " + Qt.formatDateTime(reset, "MMM d, h:mm AP")
   }
 
-  function agyStaleText() {
-    if (!agyQuota || !agyQuota.stale) return ""
-    var status = String(agyQuota.status || "").trim()
-    var hasLimits = agyQuota.limits && agyQuota.limits.length > 0
-    if (!hasLimits) return status
-    var age = agyQuota.fetchedAt > 0 ? Math.max(0, Math.floor(
-      ((inner ? inner.nowMs : Date.now()) - agyQuota.fetchedAt) / 60000)) : -1
+  function formatStaleText(stale, fetchedAt, status, hasLimits) {
+    if (!stale) return ""
+    var cleanStatus = String(status || "").trim()
+    if (!hasLimits) return cleanStatus
+    var age = fetchedAt > 0 ? Math.max(0, Math.floor(
+      ((inner ? inner.nowMs : Date.now()) - fetchedAt) / 60000)) : -1
     var parts = ["Stale"]
     if (age >= 0) parts.push("checked " + age + "m ago")
-    if (status !== "") parts.push(status)
+    if (cleanStatus !== "") parts.push(cleanStatus)
     return parts.join(" · ")
   }
 
-  function agyLimitTooltip(limit) {
-    var rem = agyRemainingFraction(limit)
-    var title = String(limit && limit.label || limit && limit.title || "Antigravity")
+  function limitTooltipText(limit, staleText) {
+    var rem = limitRemainingFraction(limit)
+    var title = String(limit && (limit.label || limit.title) || "Quota")
     var lines = []
     if (isFinite(rem)) {
-      var usedPct = ((1 - rem) * 100).toFixed(2)
-      lines.push(title + ": " + agyPercentText(rem) + " left (" + usedPct + "% used)")
+      var used = (1 - rem) * 100
+      var usedStr = Math.abs(used - Math.round(used)) < 0.005 ? Math.round(used) + "%" : used.toFixed(2) + "%"
+      lines.push(title + ": " + limitPercentText(rem) + " left (" + usedStr + " used)")
     } else {
       lines.push(title + ": refreshing")
     }
-    var refresh = agyRefreshText(limit)
+    var refresh = limitRefreshText(limit)
     if (refresh !== "") lines.push(refresh)
-    var stale = agyStaleText()
-    if (stale !== "") lines.push(stale)
+    if (staleText !== "") lines.push(staleText)
     return lines.join("\n")
   }
 
@@ -357,38 +404,20 @@ Item {
     return providerSection("agy")
   }
 
+  function codexSection() {
+    return providerSection("codex")
+  }
+
   function placeCustomRows() {
     placeAccountRow()
     placeAgyQuotaRow()
+    placeCodexQuotaRow()
   }
 
-  function placeAccountRow() {
-    var section = claudeSection()
-    if (!section || (accountRow && accountRow.parent === section)) return
-    var siblings = []
-    var anchorIndex = -1
-    for (var i = 0; i < section.children.length; i++) {
-      siblings.push(section.children[i])
-      if (anchorIndex < 0 && siblings[i].lit !== undefined) anchorIndex = i
-    }
-    if (anchorIndex < 0) {
-      console.warn("david.agents: stock Claude section has no name row; account switch not shown")
-      return
-    }
-    // A Column lays out in child order, and Item.stackAfter is not callable
-    // from QML: append the row, then re-append everything that follows the
-    // anchor so it lands below the row again.
-    if (accountRow) accountRow.destroy()
-    accountRow = accountRowComponent.createObject(section)
-    for (var j = anchorIndex + 1; j < siblings.length; j++) {
-      siblings[j].parent = agents
-      siblings[j].parent = section
-    }
-  }
-
-  function placeAgyQuotaRow() {
-    var section = agySection()
-    if (!section || (agyQuotaRow && agyQuotaRow.parent === section)) return
+  // Inserts a custom component right after a ProviderSection's name row and
+  // optionally hides the stock limits Column underneath it.
+  function installSectionRow(section, existingRow, rowObjectName, component, hideStockPredicate, warnLabel) {
+    if (!section || (existingRow && existingRow.parent === section)) return existingRow
     var siblings = []
     var anchorIndex = -1
     var stockLimitsColumn = null
@@ -398,29 +427,70 @@ Item {
       if (anchorIndex < 0 && child.lit !== undefined) {
         anchorIndex = i
       } else if (anchorIndex >= 0 && !stockLimitsColumn
-                 && child.objectName !== "agyQuotaRow"
+                 && child.objectName !== rowObjectName
                  && child.spacing !== undefined) {
-        // The first Column after sectionHead in ProviderSection is the stock
-        // limits list; hide it while our live Antigravity quota block is shown.
         stockLimitsColumn = child
       }
     }
     if (anchorIndex < 0) {
-      console.warn("david.agents: stock Antigravity section has no name row; quota override not shown")
-      return
+      console.warn("david.agents: stock " + warnLabel + " section has no name row; custom row not shown")
+      return existingRow
     }
-    if (agyQuotaRow) agyQuotaRow.destroy()
-    agyQuotaRow = agyQuotaComponent.createObject(section)
+    // A Column lays out in child order, and Item.stackAfter is not callable
+    // from QML: append the row, then re-append everything that follows the
+    // anchor so it lands below the row again.
+    if (existingRow) existingRow.destroy()
+    var created = component.createObject(section, { ownerSection: section })
     for (var j = anchorIndex + 1; j < siblings.length; j++) {
       siblings[j].parent = agents
       siblings[j].parent = section
     }
-    if (stockLimitsColumn) {
+    if (stockLimitsColumn && hideStockPredicate) {
       stockLimitsColumn.visible = Qt.binding(function() {
-        return !section.multi && section.windows.length > 0 && !agents.agyQuotaActive
+        return !section.multi && section.windows.length > 0 && !hideStockPredicate(section)
       })
     }
+    return created
   }
+
+  function placeAccountRow() {
+    accountRow = installSectionRow(
+      claudeSection(),
+      accountRow,
+      "accountRow",
+      accountRowComponent,
+      function(section) {
+        return !section.multi && !!section.provider && !!section.provider.limits && section.provider.limits.length > 0
+      },
+      "Claude"
+    )
+  }
+
+  function placeAgyQuotaRow() {
+    agyQuotaRow = installSectionRow(
+      agySection(),
+      agyQuotaRow,
+      "agyQuotaRow",
+      agyQuotaComponent,
+      function() { return agents.agyQuotaActive },
+      "Antigravity"
+    )
+  }
+
+  function placeCodexQuotaRow() {
+    codexQuotaRow = installSectionRow(
+      codexSection(),
+      codexQuotaRow,
+      "codexQuotaRow",
+      codexQuotaComponent,
+      function(section) {
+        return !section.multi && !!section.provider && !!section.provider.limits && section.provider.limits.length > 0
+      },
+      "Codex"
+    )
+  }
+
+  // ------------------------------------------------------------- processes
 
   Process {
     id: listProcess
@@ -514,124 +584,174 @@ Item {
     onTriggered: agents.loadAgyQuota(false)
   }
 
-  Component {
-    id: agyQuotaComponent
+  // ------------------------------------------------------------ components
 
-    Column {
-      id: agyQuotaBox
-      objectName: "agyQuotaRow"
-      visible: agents.agyQuotaActive
-      width: parent ? parent.width : 0
-      spacing: Style.space(12)
+  component QuotaBars: Column {
+    id: quotaList
+    property string providerPrefix: "quota"
+    property var limits: []
+    property color barColor: agents.agyBarColor
+    property string staleText: ""
+    property string footerNote: ""
+    spacing: Style.space(12)
 
-      readonly property color healthyColor: !Qt.colorEqual(Commons.Color.accent, agents.foreground)
-        ? Commons.Color.accent : "#86dc5e"
+    Repeater {
+      model: quotaList.limits || []
 
-      Repeater {
-        model: agents.agyQuota && agents.agyQuota.limits ? agents.agyQuota.limits : []
+      Column {
+        id: limitBlock
+        required property var modelData
+        readonly property string key: agents.limitKey(modelData)
+        objectName: quotaList.providerPrefix + "Limit:" + key
+        width: quotaList.width
+        spacing: Style.space(5)
 
-        Column {
-          id: limitBlock
-          required property var modelData
-          objectName: "agyLimit:" + String(modelData.title || "")
-          width: agyQuotaBox.width
-          spacing: Style.space(5)
+        readonly property real remaining: agents.limitRemainingFraction(modelData)
+        readonly property bool available: isFinite(remaining)
+        readonly property bool alarming: available && remaining <= 0.1
 
-          readonly property real remaining: agents.agyRemainingFraction(modelData)
-          readonly property bool available: isFinite(remaining)
-          readonly property bool alarming: available && remaining <= 0.1
+        HoverHandler { id: limitHover }
 
-          HoverHandler { id: agyLimitHover }
+        PanelToolTip {
+          visible: limitHover.hovered
+          text: agents.limitTooltipText(limitBlock.modelData, quotaList.staleText)
+        }
 
-          PanelToolTip {
-            visible: agyLimitHover.hovered
-            text: agents.agyLimitTooltip(limitBlock.modelData)
-          }
+        Item {
+          width: parent.width
+          implicitHeight: Math.max(limitTitle.implicitHeight, limitPct.implicitHeight)
 
-          Item {
-            width: parent.width
-            implicitHeight: Math.max(limitTitle.implicitHeight, limitPct.implicitHeight)
-
-            Text {
-              id: limitTitle
-              anchors.left: parent.left
-              anchors.right: limitPct.left
-              anchors.rightMargin: Style.spacing.sm
-              anchors.verticalCenter: parent.verticalCenter
-              textFormat: Text.PlainText
-              text: agents.agyLimitTitle(limitBlock.modelData)
-              color: agents.foreground
-              font.family: agents.fontFamily
-              font.pixelSize: Style.font.bodySmall
-              elide: Text.ElideRight
-            }
-
-            Text {
-              id: limitPct
-              objectName: "agyLimitPct:" + String(limitBlock.modelData.title || "")
-              anchors.right: parent.right
-              anchors.verticalCenter: parent.verticalCenter
-              textFormat: Text.PlainText
-              text: agents.agyPercentText(limitBlock.remaining)
-              color: limitBlock.alarming ? agents.urgent : agents.foreground
-              font.family: agents.fontFamily
-              font.pixelSize: Style.font.bodySmall
-              font.bold: true
-            }
-          }
-
-          Item {
-            id: agyMeter
-            objectName: "agyMeter:" + String(limitBlock.modelData.title || "")
-            width: parent.width
-            height: Math.max(Style.space(6), Math.round(Style.spacing.controlHeight * 0.2))
-
-            Rectangle {
-              anchors.fill: parent
-              radius: height / 2
-              color: agents.inner ? agents.inner.track : Style.selectedFillFor(agents.foreground, Commons.Color.accent)
-            }
-
-            Rectangle {
-              objectName: "agyMeterFill:" + String(limitBlock.modelData.title || "")
-              anchors.left: parent.left
-              anchors.verticalCenter: parent.verticalCenter
-              height: parent.height
-              radius: height / 2
-              width: parent.width * (limitBlock.available ? limitBlock.remaining : 0)
-              color: limitBlock.alarming ? agents.urgent : agyQuotaBox.healthyColor
-
-              Behavior on width {
-                NumberAnimation { duration: Style.duration(160); easing.type: Easing.OutCubic }
-              }
-            }
+          Text {
+            id: limitTitle
+            objectName: quotaList.providerPrefix + "LimitTitle:" + limitBlock.key
+            anchors.left: parent.left
+            anchors.right: limitPct.left
+            anchors.rightMargin: Style.spacing.sm
+            anchors.verticalCenter: parent.verticalCenter
+            textFormat: Text.PlainText
+            text: agents.limitDisplayTitle(limitBlock.modelData)
+            color: agents.foreground
+            font.family: agents.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            elide: Text.ElideRight
           }
 
           Text {
-            objectName: "agyLimitReset:" + String(limitBlock.modelData.title || "")
-            width: parent.width
+            id: limitPct
+            objectName: quotaList.providerPrefix + "LimitPct:" + limitBlock.key
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
             textFormat: Text.PlainText
-            text: agents.agyRefreshText(limitBlock.modelData)
-            color: agents.dim
+            text: agents.limitPercentText(limitBlock.remaining)
+            color: limitBlock.alarming ? agents.urgent : agents.foreground
             font.family: agents.fontFamily
-            font.pixelSize: Style.font.caption
-            elide: Text.ElideRight
+            font.pixelSize: Style.font.bodySmall
+            font.bold: true
           }
         }
-      }
 
-      Text {
-        objectName: "agyQuotaStatus"
-        visible: text !== ""
-        width: parent.width
-        textFormat: Text.PlainText
-        text: agents.agyStaleText()
-        color: (agents.agyQuota && agents.agyQuota.limits && agents.agyQuota.limits.length > 0)
-          ? agents.dim : agents.urgent
-        font.family: agents.fontFamily
-        font.pixelSize: Style.font.caption
-        wrapMode: Text.WordWrap
+        Item {
+          id: meter
+          objectName: quotaList.providerPrefix + "Meter:" + limitBlock.key
+          width: parent.width
+          height: Math.max(Style.space(6), Math.round(Style.spacing.controlHeight * 0.2))
+
+          Rectangle {
+            anchors.fill: parent
+            radius: height / 2
+            color: agents.inner ? agents.inner.track : Style.selectedFillFor(agents.foreground, Commons.Color.accent)
+          }
+
+          Rectangle {
+            objectName: quotaList.providerPrefix + "MeterFill:" + limitBlock.key
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            height: parent.height
+            radius: height / 2
+            width: parent.width * (limitBlock.available ? limitBlock.remaining : 0)
+            color: limitBlock.alarming ? agents.urgent : quotaList.barColor
+          }
+        }
+
+        Text {
+          objectName: quotaList.providerPrefix + "LimitReset:" + limitBlock.key
+          width: parent.width
+          textFormat: Text.PlainText
+          text: agents.limitRefreshText(limitBlock.modelData)
+          color: agents.dim
+          font.family: agents.fontFamily
+          font.pixelSize: Style.font.caption
+          elide: Text.ElideRight
+        }
       }
+    }
+
+    Text {
+      objectName: quotaList.providerPrefix + "FooterNote"
+      visible: text !== ""
+      width: parent.width
+      textFormat: Text.PlainText
+      text: quotaList.footerNote
+      color: agents.dim
+      font.family: agents.fontFamily
+      font.pixelSize: Style.font.caption
+      wrapMode: Text.WordWrap
+    }
+
+    Text {
+      objectName: quotaList.providerPrefix + "QuotaStatus"
+      visible: text !== ""
+      width: parent.width
+      textFormat: Text.PlainText
+      text: quotaList.staleText
+      color: (quotaList.limits && quotaList.limits.length > 0) ? agents.dim : agents.urgent
+      font.family: agents.fontFamily
+      font.pixelSize: Style.font.caption
+      wrapMode: Text.WordWrap
+    }
+  }
+
+  Component {
+    id: agyQuotaComponent
+
+    QuotaBars {
+      property var ownerSection: null
+      objectName: "agyQuotaRow"
+      providerPrefix: "agy"
+      visible: agents.agyQuotaActive
+      width: parent ? parent.width : 0
+      limits: agents.agyQuota && agents.agyQuota.limits ? agents.agyQuota.limits : []
+      barColor: agents.agyBarColor
+      staleText: agents.agyQuota
+        ? agents.formatStaleText(
+            agents.agyQuota.stale === true,
+            Number(agents.agyQuota.fetchedAt || 0),
+            agents.agyQuota.status,
+            limits.length > 0)
+        : ""
+    }
+  }
+
+  Component {
+    id: codexQuotaComponent
+
+    QuotaBars {
+      property var ownerSection: null
+      readonly property var provider: ownerSection ? ownerSection.provider : null
+      objectName: "codexQuotaRow"
+      providerPrefix: "codex"
+      visible: !!provider && !ownerSection.multi && limits.length > 0
+      width: parent ? parent.width : 0
+      limits: provider && provider.limits ? provider.limits : []
+      barColor: agents.codexBarColor
+      staleText: provider
+        ? agents.formatStaleText(
+            provider.limitsStale === true,
+            Number(provider.limitsFetchedAt || 0),
+            provider.usageStatusText,
+            limits.length > 0)
+        : ""
+      footerNote: provider && agents.inner ? agents.inner.resetCreditsText(provider.resetCredits) : ""
     }
   }
 
@@ -639,114 +759,85 @@ Item {
     id: accountRowComponent
 
     Column {
+      id: claudeRow
+      property var ownerSection: null
+      readonly property var provider: ownerSection ? ownerSection.provider : null
+      readonly property var providerLimits: provider && provider.limits ? provider.limits : []
       objectName: "accountRow"
-      visible: agents.accounts.length > 0
+      visible: agents.accounts.length > 0 || (providerLimits.length > 0 && (!ownerSection || !ownerSection.multi))
       width: parent ? parent.width : 0
-      spacing: Style.spacing.sm
+      spacing: Style.space(12)
 
-      PanelSectionHeader {
-        text: agents.switching ? "ACCOUNT · SWITCHING…" : "ACCOUNT"
-        foreground: agents.foreground
-        fontFamily: agents.fontFamily
-      }
-
-      Row {
-        id: accountButtons
+      Column {
+        visible: agents.accounts.length > 0
         width: parent.width
-        spacing: Style.spacing.md
-        readonly property int count: agents.accounts.length + 1
-        readonly property real cellWidth: (width - spacing * (count - 1)) / count
+        spacing: Style.spacing.sm
 
-        Repeater {
-          model: agents.accounts
+        PanelSectionHeader {
+          text: agents.switching ? "ACCOUNT · SWITCHING…" : "ACCOUNT"
+          foreground: agents.foreground
+          fontFamily: agents.fontFamily
+        }
+
+        Row {
+          id: accountButtons
+          width: parent.width
+          spacing: Style.spacing.md
+          readonly property int count: agents.accounts.length + 1
+          readonly property real cellWidth: (width - spacing * (count - 1)) / count
+
+          Repeater {
+            model: agents.accounts
+
+            Button {
+              required property var modelData
+              objectName: "accountButton:" + modelData.email
+              width: accountButtons.cellWidth
+              text: agents.shortName(modelData.email) + (modelData.signInExpired ? " ⟳" : "")
+              tooltipText: agents.accountTooltip(modelData)
+              selected: modelData.active
+              bordered: true
+              foreground: agents.foreground
+              fontFamily: agents.fontFamily
+              fontSize: Style.font.bodySmall
+              verticalPadding: Style.spacing.controlPaddingY
+              onHovered: function(isHovered) {
+                if (isHovered && !modelData.active && !modelData.signInExpired)
+                  agents.loadQuota(modelData.email)
+                else if (!isHovered && agents.hoveredEmail === modelData.email)
+                  agents.hoveredEmail = ""
+              }
+              onClicked: agents.useAccount(modelData)
+            }
+          }
 
           Button {
-            required property var modelData
-            objectName: "accountButton:" + modelData.email
             width: accountButtons.cellWidth
-            text: agents.shortName(modelData.email) + (modelData.signInExpired ? " ⟳" : "")
-            tooltipText: agents.accountTooltip(modelData)
-            selected: modelData.active
+            text: "+ Add"
+            tooltipText: "Sign in another Claude account"
             bordered: true
             foreground: agents.foreground
             fontFamily: agents.fontFamily
             fontSize: Style.font.bodySmall
             verticalPadding: Style.spacing.controlPaddingY
-            onHovered: function(isHovered) {
-              if (isHovered && !modelData.active && !modelData.signInExpired)
-                agents.loadQuota(modelData.email)
-              else if (!isHovered && agents.hoveredEmail === modelData.email)
-                agents.hoveredEmail = ""
-            }
-            onClicked: agents.useAccount(modelData)
+            onClicked: agents.addAccount()
           }
         }
-
-        Button {
-          width: accountButtons.cellWidth
-          text: "+ Add"
-          tooltipText: "Sign in another Claude account"
-          bordered: true
-          foreground: agents.foreground
-          fontFamily: agents.fontFamily
-          fontSize: Style.font.bodySmall
-          verticalPadding: Style.spacing.controlPaddingY
-          onClicked: agents.addAccount()
-        }
       }
 
-      Text {
-        objectName: "generalAllowanceText"
+      QuotaBars {
+        visible: claudeRow.providerLimits.length > 0 && (!claudeRow.ownerSection || !claudeRow.ownerSection.multi)
         width: parent.width
-        textFormat: Text.PlainText
-        text: agents.activeQuotaLine("Weekly", "General weekly")
-        color: agents.foreground
-        font.family: agents.fontFamily
-        font.pixelSize: Style.font.caption
-        wrapMode: Text.WordWrap
-      }
-
-      Text {
-        objectName: "fableAllowanceText"
-        width: parent.width
-        textFormat: Text.PlainText
-        text: agents.activeQuotaLine("Fable Weekly", "Fable weekly")
-        color: agents.foreground
-        font.family: agents.fontFamily
-        font.pixelSize: Style.font.caption
-        wrapMode: Text.WordWrap
-      }
-
-      Item {
-        id: fableMeter
-        objectName: "fableMeter"
-        width: parent.width
-        height: Math.max(Style.space(4), Math.round(Style.spacing.controlHeight * 0.14))
-        readonly property var section: agents.claudeSection()
-        readonly property var limits: section && section.provider && section.provider.limits ? section.provider.limits : []
-        readonly property var limit: agents.quotaLimit(limits, "Fable Weekly")
-        readonly property real resetMs: limit ? new Date(String(limit.resetsAt || "")).getTime() : NaN
-        readonly property real used: limit ? Number(limit.percent) : NaN
-        readonly property bool available: isFinite(resetMs) && resetMs > (agents.inner ? agents.inner.nowMs : Date.now())
-          && isFinite(used) && used >= 0 && used <= 1
-        readonly property color fillColor: !Qt.colorEqual(Commons.Color.accent, agents.foreground)
-          ? Commons.Color.accent : (!Qt.colorEqual(agents.urgent, agents.foreground) ? agents.urgent : "#a78bfa")
-
-        Rectangle {
-          anchors.fill: parent
-          radius: height / 2
-          color: agents.inner ? agents.inner.track : Style.selectedFillFor(agents.foreground, Commons.Color.accent)
-        }
-
-        Rectangle {
-          objectName: "fableMeterFill"
-          anchors.left: parent.left
-          anchors.verticalCenter: parent.verticalCenter
-          height: parent.height
-          radius: height / 2
-          width: parent.width * (fableMeter.available ? fableMeter.used : 0)
-          color: fableMeter.fillColor
-        }
+        providerPrefix: "claude"
+        limits: claudeRow.providerLimits
+        barColor: agents.claudeBarColor
+        staleText: claudeRow.provider
+          ? agents.formatStaleText(
+              claudeRow.provider.limitsStale === true,
+              Number(claudeRow.provider.limitsFetchedAt || 0),
+              claudeRow.provider.usageStatusText,
+              claudeRow.providerLimits.length > 0)
+          : ""
       }
 
       Text {

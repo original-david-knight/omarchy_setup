@@ -122,9 +122,13 @@ class AgentsAccountsTests(unittest.TestCase):
             agy_record = dict(RECORD, id="agy", name="Antigravity", tierLabel="Ultra", limits=[
                 {"label": "Session (5-hour)", "title": "Session", "percent": 0.0, "resetsAt": ""},
                 {"label": "Weekly (7-day)", "title": "Weekly", "percent": 0.0, "resetsAt": ""}])
+            codex_reset = (now + datetime.timedelta(days=30)).isoformat()
+            codex_record = dict(RECORD, id="codex", name="Codex", tierLabel="Free", limits=[
+                {"label": "720h window", "percent": 0.25, "resetsAt": codex_reset}],
+                resetCredits={"available": 2, "nextExpiresAt": reset})
             (usage / "claude.json").write_text(json.dumps(claude_record))
             (usage / "agy.json").write_text(json.dumps(agy_record))
-            (usage / "codex.json").write_text(json.dumps(dict(RECORD, id="codex", name="Codex")))
+            (usage / "codex.json").write_text(json.dumps(codex_record))
             active = workspace / "active"
             active.write_text("a@example.com")
             log = workspace / "commands.log"
